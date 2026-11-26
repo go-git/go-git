@@ -113,7 +113,7 @@ func UploadPack(
 	var haves []plumbing.Hash
 	var upreq *packp.UploadRequest
 	var common *commonHaves
-	var anyMultiAck, multiAckDetailed bool
+	var mode ackMode
 	var caps capability.List
 	var wants []plumbing.Hash
 	var plan *shallowPlan
@@ -138,9 +138,12 @@ func UploadPack(
 				return fmt.Errorf("closing reader: %w", err)
 			}
 
-			multiAckDetailed = caps.Supports(capability.MultiACKDetailed)
-			// Either form, where upstream tests data->multi_ack.
-			anyMultiAck = multiAckDetailed || caps.Supports(capability.MultiACK)
+			switch {
+			case caps.Supports(capability.MultiACKDetailed):
+				mode = ackMultiDetailed
+			case caps.Supports(capability.MultiACK):
+				mode = ackMulti
+			}
 
 			// TODO: support deepen-since, and deepen-not
 			if !upreq.Depth.DeepenSince.IsZero() || len(upreq.Depth.DeepenNot) > 0 {
@@ -211,72 +214,9 @@ func UploadPack(
 		haves = append(haves, uphav.Haves...)
 		done = uphav.Done
 
-		// Acknowledge the haves as upstream get_common_commits does: a have is
-		// common when the server has it, and "ready" is only promised once
-		// every want reaches a common have (ok_to_give_up).
-		var resps []packp.ServerResponse
-		ack := func(a packp.ACK) {
-			resps = append(resps, packp.ServerResponse{ACKs: []packp.ACK{a}})
-		}
-		nak := func() { resps = append(resps, packp.ServerResponse{}) }
-		gotCommon, gotOther := false, false
-		for _, h := range uphav.Haves {
-			if err := ctx.Err(); err != nil {
-				return err
-			}
-			ok, err := common.add(h)
-			if err != nil {
-				return fmt.Errorf("checking have %s: %w", h, err)
-			}
-			if !ok {
-				gotOther = true
-				if anyMultiAck {
-					ready, err := common.okToGiveUp(ctx)
-					if err != nil {
-						return fmt.Errorf("checking negotiation: %w", err)
-					}
-					if ready {
-						status := packp.ACKContinue
-						if multiAckDetailed {
-							status = packp.ACKReady
-						}
-						ack(packp.ACK{Hash: h, Status: status})
-					}
-				}
-				continue
-			}
-
-			gotCommon = true
-			switch {
-			case multiAckDetailed:
-				ack(packp.ACK{Hash: h, Status: packp.ACKCommon})
-			case anyMultiAck:
-				ack(packp.ACK{Hash: h, Status: packp.ACKContinue})
-			case len(common.counted) == 1:
-				ack(packp.ACK{Hash: h})
-			}
-		}
-
-		if done {
-			switch {
-			case len(common.counted) == 0:
-				nak()
-			case anyMultiAck:
-				ack(packp.ACK{Hash: common.last})
-			}
-		} else {
-			if multiAckDetailed && gotCommon && !gotOther {
-				ready, err := common.okToGiveUp(ctx)
-				if err != nil {
-					return fmt.Errorf("checking negotiation: %w", err)
-				}
-				if ready {
-					ack(packp.ACK{Hash: common.last, Status: packp.ACKReady})
-				}
-			}
-			if len(common.counted) == 0 || anyMultiAck {
-				nak()
-			}
+		resps, err := acknowledgeHaves(ctx, common, mode, uphav.Haves, done)
+		if err != nil {
+			return err
 		}
 
 		for _, resp := range resps {
@@ -346,6 +286,125 @@ func UploadPack(
 	}
 
 	return nil
+}
+
+// ackMode is the way a client asked to have its haves acknowledged, by the
+// capability it sent with its first want.
+type ackMode int
+
+const (
+	// ackSingle is the original protocol: the server acknowledges the
+	// first have it shares with the client and nothing after it.
+	ackSingle ackMode = iota
+	// ackMulti is multi_ack: every shared have is acknowledged with
+	// "continue".
+	ackMulti
+	// ackMultiDetailed is multi_ack_detailed: a shared have is
+	// acknowledged with "common", and "ready" tells the client that the
+	// server knows enough to build a pack.
+	ackMultiDetailed
+)
+
+// acknowledgeHaves answers one round of a v0 negotiation. It records haves,
+// the haves the client sent in this round, in common, and returns the lines
+// to send back in order. done says whether the round ended with "done"
+// rather than a flush.
+//
+// A have the server shares is acknowledged at once, in the form mode asks
+// for. A have the server lacks is only answered once the server could stop
+// negotiating, to tell a multi_ack client that it need not walk further
+// down that line of history.
+func acknowledgeHaves(
+	ctx context.Context,
+	common *commonHaves,
+	mode ackMode,
+	haves []plumbing.Hash,
+	done bool,
+) ([]packp.ServerResponse, error) {
+	var resps []packp.ServerResponse
+	ack := func(h plumbing.Hash, status packp.ACKStatus) {
+		resps = append(resps, packp.ServerResponse{ACKs: []packp.ACK{{Hash: h, Status: status}}})
+	}
+	nak := func() { resps = append(resps, packp.ServerResponse{}) }
+	knowsEnough := func() (bool, error) {
+		enough, err := common.okToGiveUp(ctx)
+		if err != nil {
+			return false, fmt.Errorf("checking negotiation: %w", err)
+		}
+		return enough, nil
+	}
+
+	sharedInRound, lackedInRound := false, false
+	for _, h := range haves {
+		if err := ctx.Err(); err != nil {
+			return nil, err
+		}
+		shared, err := common.add(h)
+		if err != nil {
+			return nil, fmt.Errorf("checking have %s: %w", h, err)
+		}
+
+		if shared {
+			sharedInRound = true
+			switch {
+			case mode == ackMultiDetailed:
+				ack(h, packp.ACKCommon)
+			case mode == ackMulti:
+				ack(h, packp.ACKContinue)
+			case len(common.counted) == 1:
+				ack(h, 0)
+			}
+			continue
+		}
+
+		lackedInRound = true
+		if mode == ackSingle {
+			continue
+		}
+		enough, err := knowsEnough()
+		if err != nil {
+			return nil, err
+		}
+		if enough {
+			status := packp.ACKContinue
+			if mode == ackMultiDetailed {
+				status = packp.ACKReady
+			}
+			ack(h, status)
+		}
+	}
+
+	nothingShared := len(common.counted) == 0
+	if done {
+		// The reply to "done" is the last line before the pack: a NAK when
+		// nothing is shared, and for a multi_ack client otherwise the
+		// latest shared have once more, without a status.
+		switch {
+		case nothingShared:
+			nak()
+		case mode != ackSingle:
+			ack(common.last, 0)
+		}
+		return resps, nil
+	}
+
+	// A round in which every have was shared has not said "ready" yet,
+	// since that is only attached to a have the server lacks.
+	if mode == ackMultiDetailed && sharedInRound && !lackedInRound {
+		enough, err := knowsEnough()
+		if err != nil {
+			return nil, err
+		}
+		if enough {
+			ack(common.last, packp.ACKReady)
+		}
+	}
+	// A flush is answered with a NAK, except that the original protocol
+	// stays silent once it has sent its one acknowledgement.
+	if nothingShared || mode != ackSingle {
+		nak()
+	}
+	return resps, nil
 }
 
 func objectsToUpload(st storage.Storer, wants, haves []plumbing.Hash) ([]plumbing.Hash, error) {
