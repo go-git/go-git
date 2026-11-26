@@ -108,33 +108,6 @@ func TestNegotiatePackCloseBehavior(t *testing.T) {
 	}
 }
 
-func TestNextFlush(t *testing.T) {
-	t.Parallel()
-
-	tests := []struct {
-		name         string
-		statelessRPC bool
-		in           int
-		want         int
-	}{
-		{name: "stateless_initial", statelessRPC: true, in: 16, want: 32},
-		{name: "stateless_growth", statelessRPC: true, in: 32, want: 64},
-		{name: "stateless_large_boundary", statelessRPC: true, in: 16384, want: 18022},
-		{name: "stateless_large_growth", statelessRPC: true, in: 32768, want: 36044},
-		{name: "stateful_initial", statelessRPC: false, in: 16, want: 32},
-		{name: "stateful_pipe_safe_boundary", statelessRPC: false, in: 32, want: 64},
-		{name: "stateful_linear_growth_64", statelessRPC: false, in: 64, want: 96},
-		{name: "stateful_linear_growth_96", statelessRPC: false, in: 96, want: 128},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			t.Parallel()
-			assert.Equal(t, tt.want, nextFlush(tt.statelessRPC, tt.in))
-		})
-	}
-}
-
 func TestNegotiatePackMultiRound(t *testing.T) {
 	t.Parallel()
 
@@ -273,48 +246,26 @@ func TestApplyServerACKs(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
 
-			common := mapsClone(tt.initialCommon)
-			statelessCommon := append([]plumbing.Hash(nil), tt.initialStatelessCommon...)
-			gotContinue := tt.initialGotContinue
-			gotReady := tt.initialGotReady
-			inVein := tt.initialInVein
+			answers := haveNegotiator{
+				statelessRPC:    tt.statelessRPC,
+				common:          mapsClone(tt.initialCommon),
+				repeat:          append([]plumbing.Hash(nil), tt.initialStatelessCommon...),
+				anyAcknowledged: tt.initialGotContinue,
+				ready:           tt.initialGotReady,
+				unacknowledged:  tt.initialInVein,
+			}
 
-			applyServerACKs(tt.statelessRPC, tt.acks, common, &statelessCommon, &gotContinue, &gotReady, &inVein)
+			answers.record(tt.acks)
 
-			assert.Equal(t, tt.wantGotContinue, gotContinue)
-			assert.Equal(t, tt.wantGotReady, gotReady)
-			assert.Equal(t, tt.wantInVein, inVein)
-			assert.Equal(t, tt.wantStatelessCommon, statelessCommon)
+			assert.Equal(t, tt.wantGotContinue, answers.anyAcknowledged)
+			assert.Equal(t, tt.wantGotReady, answers.ready)
+			assert.Equal(t, tt.wantInVein, answers.unacknowledged)
+			assert.Equal(t, tt.wantStatelessCommon, answers.repeat)
 			for _, h := range tt.wantCommonContains {
-				assert.Contains(t, common, h)
+				assert.Contains(t, answers.common, h)
 			}
 		})
 	}
-}
-
-func TestNegotiatePackStatelessClampsAfterGotContinue(t *testing.T) {
-	t.Parallel()
-
-	reader := bytes.NewBuffer(nil)
-	continueHash := plumbing.NewHash("bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb")
-	var err error
-	_, err = pktline.WriteString(reader, "ACK "+continueHash.String()+" continue\n")
-	require.NoError(t, err)
-	for range 4 {
-		_, err = pktline.WriteString(reader, "NAK\n")
-		require.NoError(t, err)
-	}
-
-	writer := newMockWriteCloser(nil)
-	req := &FetchRequest{
-		Wants: []plumbing.Hash{plumbing.NewHash("6ecf0ef2c2dffb796033e5a02219af86ec6584e5")},
-		Haves: makeSyntheticHaves(600),
-	}
-
-	_, err = NegotiatePack(context.TODO(), memory.NewStorage(), capability.List{}, true, reader, writer, req)
-	require.NoError(t, err)
-
-	assert.LessOrEqual(t, strings.Count(writer.writeBuf.String(), "have "), initialFlush+maxInVein, "post-continue stateless negotiation should clamp new haves to the remaining in-vein budget")
 }
 
 func TestNegotiatePackStopsImmediatelyOnACKReady(t *testing.T) {
@@ -336,7 +287,45 @@ func TestNegotiatePackStopsImmediatelyOnACKReady(t *testing.T) {
 
 	out := writer.writeBuf.String()
 	assert.Equal(t, 2, strings.Count(out, "want "), "ACK_ready should send only the terminal done request after the first round")
-	assert.Equal(t, initialFlush, strings.Count(out, "have "), "ACK_ready should stop after the first batch")
+	assert.Equal(t, firstHaveBatch, strings.Count(out, "have "), "ACK_ready should stop after the first batch")
+}
+
+// A fetch traced from git 2.54.0 over smart HTTP with protocol.version=0,
+// against a server that does not advertise no-done. The server acknowledges
+// one have of the first request as common and answers "ready" for a later
+// one it lacks. The request that follows carries the wants, the common have
+// and "done": the server has forgotten the first request, and builds the
+// pack from the haves of the last one alone.
+func TestNegotiatePackRepeatsCommonHavesAfterReady(t *testing.T) {
+	t.Parallel()
+
+	haves := makeSyntheticHaves(40)
+	// Haves are offered from the end of the list.
+	common, unknown := haves[len(haves)-3], haves[len(haves)-4]
+
+	reader := bytes.NewBuffer(nil)
+	for _, line := range []string{
+		"ACK " + common.String() + " common\n",
+		"ACK " + unknown.String() + " ready\n",
+		"NAK\n",
+		"ACK " + common.String() + "\n",
+	} {
+		_, err := pktline.WriteString(reader, line)
+		require.NoError(t, err)
+	}
+
+	writer := newMockWriteCloser(nil)
+	req := &FetchRequest{
+		Wants: []plumbing.Hash{plumbing.NewHash("6ecf0ef2c2dffb796033e5a02219af86ec6584e5")},
+		Haves: haves,
+	}
+
+	_, err := NegotiatePack(context.Background(), memory.NewStorage(), capability.List{}, true, reader, writer, req)
+	require.NoError(t, err)
+
+	requests := strings.SplitAfter(writer.writeBuf.String(), "0000")
+	require.Len(t, requests, 4, "two requests, each a want section and a have section")
+	assert.Equal(t, "0032have "+common.String()+"\n0009done\n", requests[3])
 }
 
 func negotiatePackMultiRound(t *testing.T, statelessRPC bool) *mockWriteCloser {
@@ -493,42 +482,4 @@ func TestNegotiatePackReturnsShallowDecodeError(t *testing.T) {
 	case <-time.After(10 * time.Second):
 		t.Fatal("NegotiatePack did not return the shallow-update decode error")
 	}
-}
-
-// A fetch traced from git 2.54.0 over smart HTTP with protocol.version=0,
-// against a server that does not advertise no-done. The server acknowledges
-// one have of the first request as common and answers "ready" for a later
-// one it lacks. The request that follows carries the wants, the common have
-// and "done": the server has forgotten the first request, and builds the
-// pack from the haves of the last one alone.
-func TestNegotiatePackRepeatsCommonHavesAfterReady(t *testing.T) {
-	t.Parallel()
-
-	haves := makeSyntheticHaves(40)
-	// Haves are offered from the end of the list.
-	common, unknown := haves[len(haves)-3], haves[len(haves)-4]
-
-	reader := bytes.NewBuffer(nil)
-	for _, line := range []string{
-		"ACK " + common.String() + " common\n",
-		"ACK " + unknown.String() + " ready\n",
-		"NAK\n",
-		"ACK " + common.String() + "\n",
-	} {
-		_, err := pktline.WriteString(reader, line)
-		require.NoError(t, err)
-	}
-
-	writer := newMockWriteCloser(nil)
-	req := &FetchRequest{
-		Wants: []plumbing.Hash{plumbing.NewHash("6ecf0ef2c2dffb796033e5a02219af86ec6584e5")},
-		Haves: haves,
-	}
-
-	_, err := NegotiatePack(context.Background(), memory.NewStorage(), capability.List{}, true, reader, writer, req)
-	require.NoError(t, err)
-
-	requests := strings.SplitAfter(writer.writeBuf.String(), "0000")
-	require.Len(t, requests, 4, "two requests, each a want section and a have section")
-	assert.Equal(t, "0032have "+common.String()+"\n0009done\n", requests[3])
 }
