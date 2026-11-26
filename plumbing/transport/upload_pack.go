@@ -475,52 +475,61 @@ func boundaryAtDepth(ctx context.Context, st storage.Storer, heads []plumbing.Ha
 // the new depth is measured from the client's existing shallow boundary
 // rather than from the tips.
 func clientBoundaryDepth(ctx context.Context, st storage.Storer, heads, shallows []plumbing.Hash) (int, error) {
+	if len(shallows) == 0 {
+		return 0, nil
+	}
 	shallowSet := make(map[plumbing.Hash]struct{}, len(shallows))
 	for _, h := range shallows {
 		shallowSet[h] = struct{}{}
 	}
 
-	best := 0
-	seen := map[plumbing.Hash]int{}
-	type frame struct {
-		hash  plumbing.Hash
-		depth int // depth of this commit's predecessor; the commit sits at depth+1
-	}
-	var stack []frame
+	// Walking breadth-first reaches every commit first at its shortest
+	// depth, so the first level that holds a client shallow commit is the
+	// answer and nothing beyond it is read.
+	visited := make(map[plumbing.Hash]struct{})
+	var level []plumbing.Hash
 	for _, h := range heads {
-		if c, ok := peelToCommit(st, h); ok {
-			stack = append(stack, frame{c.Hash, 0})
+		c, ok := peelToCommit(st, h)
+		if !ok {
+			continue
 		}
+		if _, ok := visited[c.Hash]; ok {
+			continue
+		}
+		visited[c.Hash] = struct{}{}
+		level = append(level, c.Hash)
 	}
-	for len(stack) > 0 {
+
+	// next is the level being built; the two slices swap after each level.
+	var next []plumbing.Hash
+	for d := 1; len(level) > 0; d++ {
 		if err := ctx.Err(); err != nil {
 			return 0, err
 		}
-		f := stack[len(stack)-1]
-		stack = stack[:len(stack)-1]
-		if d, ok := seen[f.hash]; ok && d <= f.depth {
-			continue
-		}
-		seen[f.hash] = f.depth
-
-		cur := f.depth + 1
-		if _, ok := shallowSet[f.hash]; ok {
-			if best == 0 || cur < best {
-				best = cur
+		for _, h := range level {
+			if _, ok := shallowSet[h]; ok {
+				return d, nil
 			}
-			// A client shallow commit is a normal commit on the server, and
-			// another one may lie beyond it, so the walk continues.
 		}
 
-		c, err := object.GetCommit(st, f.hash)
-		if err != nil {
-			continue
+		next = next[:0]
+		for _, h := range level {
+			// A commit that cannot be read ends its line of history.
+			c, err := object.GetCommit(st, h)
+			if err != nil {
+				continue
+			}
+			for _, p := range c.ParentHashes {
+				if _, ok := visited[p]; ok {
+					continue
+				}
+				visited[p] = struct{}{}
+				next = append(next, p)
+			}
 		}
-		for _, p := range c.ParentHashes {
-			stack = append(stack, frame{p, cur})
-		}
+		level, next = next, level
 	}
-	return best, nil
+	return 0, nil
 }
 
 // serveUploadPackV2 handles the git protocol v2 for upload-pack (fetch/ls-refs).
