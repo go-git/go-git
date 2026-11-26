@@ -262,3 +262,40 @@ func hasStrippedPrefix(key string) bool {
 
 	return false
 }
+
+// SkipHelper is the part of testing.TB that RequireAtLeast needs.
+type SkipHelper interface {
+	Helper()
+	Skip(args ...any)
+	Skipf(format string, args ...any)
+}
+
+// RequireAtLeast skips the test unless the git CLI is at least version
+// wantMajor.wantMinor. The reason names what the test needs from that version
+// and is reported in the skip message.
+func RequireAtLeast(t SkipHelper, wantMajor, wantMinor int, reason string) {
+	t.Helper()
+	if _, err := exec.LookPath("git"); err != nil {
+		t.Skip("git CLI not found in PATH")
+		return
+	}
+	out, err := Command("git", "version").Output()
+	if err != nil {
+		t.Skipf("cannot run git version: %v", err)
+		return
+	}
+	fields := strings.Fields(string(out)) // e.g. "git version 2.39.2"
+	if len(fields) < 3 {
+		t.Skipf("cannot parse git version %q", out)
+		return
+	}
+	parts := strings.SplitN(fields[2], ".", 3)
+	major, errMajor := strconv.Atoi(parts[0])
+	minor := 0
+	if len(parts) > 1 {
+		minor, _ = strconv.Atoi(parts[1])
+	}
+	if errMajor != nil || major < wantMajor || (major == wantMajor && minor < wantMinor) {
+		t.Skipf("git %s predates %s (need >= %d.%d)", fields[2], reason, wantMajor, wantMinor)
+	}
+}
