@@ -1138,11 +1138,14 @@ func commitsNoLongerShallow(ctx context.Context, st storage.Storer, wants, clien
 	return unshallows, parents, nil
 }
 
-// resolveDeepenNot resolves each deepen-not argument, a ref name or an object
-// id, to the object it names, peeling annotated tags. The history reachable
-// from these objects is what the shallow fetch leaves out. An argument that
-// is neither a ref nor the id of an object the server has is an error, as on
-// Git's server.
+// resolveDeepenNot resolves each deepen-not argument to the object it names,
+// peeling annotated tags. The history reachable from these objects is what
+// the shallow fetch leaves out.
+//
+// An argument is a ref name, full or short: it is looked up the way a
+// revision name is, as itself, under refs/, as a tag, as a branch and as a
+// remote-tracking branch. It has to name exactly one ref; a name that names
+// none, or several, is an error, and so is an object id, as on Git's server.
 func resolveDeepenNot(st storage.Storer, refs []string) ([]plumbing.Hash, error) {
 	if len(refs) == 0 {
 		return nil, nil
@@ -1150,15 +1153,20 @@ func resolveDeepenNot(st storage.Storer, refs []string) ([]plumbing.Hash, error)
 	out := make([]plumbing.Hash, 0, len(refs))
 	for _, r := range refs {
 		var h plumbing.Hash
-		if ref, err := storer.ResolveReference(st, plumbing.ReferenceName(r)); err == nil {
-			h = ref.Hash()
-		} else if oid, ok := plumbing.FromHex(r); ok {
-			if _, err := st.EncodedObject(plumbing.AnyObject, oid); err != nil {
-				return nil, fmt.Errorf("cannot resolve deepen-not %q", r)
+		found := 0
+		for _, rule := range plumbing.RefRevParseRules {
+			ref, err := storer.ResolveReference(st, plumbing.ReferenceName(fmt.Sprintf(rule, r)))
+			if err != nil {
+				continue
 			}
-			h = oid
-		} else {
+			h = ref.Hash()
+			found++
+		}
+		switch {
+		case found == 0:
 			return nil, fmt.Errorf("cannot resolve deepen-not %q", r)
+		case found > 1:
+			return nil, fmt.Errorf("deepen-not %q names more than one reference", r)
 		}
 		if peeled, ok := peelToNonTag(st, h); ok {
 			h = peeled

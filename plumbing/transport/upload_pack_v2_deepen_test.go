@@ -52,12 +52,14 @@ func TestUploadPackV2FetchDeepenNot(t *testing.T) {
 	require.NoError(t, err)
 	require.NotEmpty(t, c.ParentHashes, "HEAD must have a parent for this test")
 	parent := c.ParentHashes[0]
+	// deepen-not takes a ref name, not an object id.
+	require.NoError(t, st.SetReference(plumbing.NewHashReference("refs/heads/excluded", parent)))
 
 	// Excluding the parent leaves only the tip reachable, so the tip is the
 	// shallow boundary (its parent is excluded).
 	out := serveUploadPackV2Test(t, st, v2Request(t, "fetch", nil, []string{
 		"want " + head.Hash().String(),
-		"deepen-not " + parent.String(),
+		"deepen-not excluded",
 		"done",
 	}))
 
