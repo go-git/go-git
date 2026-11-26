@@ -1,6 +1,7 @@
 package sideband
 
 import (
+	"bytes"
 	"errors"
 	"fmt"
 	"io"
@@ -145,76 +146,79 @@ func (d *Demuxer) nextPackData() ([]byte, error) {
 	return nil, nil
 }
 
-// sanitize returns message with each control character replaced by its caret
-// notation (^[ for ESC, ^A for 0x01, ^? for DEL), keeping the tab and line feed
-// and the ANSI SGR sequences that color the output. Carriage return is kept
-// only when keepCR is true, for the progress channel where it redraws the
-// current line. It returns message itself when it contains no control bytes.
+const (
+	asciiESC = 0x1b
+	asciiDEL = 0x7f
+)
+
+// sanitize returns message with terminal control sequences neutralised, so
+// that text from the progress and error channels is safe to print. Carriage
+// return is kept only when keepCR is true. It returns message itself when
+// nothing needs changing.
 //
-// The bytes on the progress and error channels are whatever the server, or a
-// hook running on it, wrote to stderr, and they end up on the user's terminal.
-// An escape sequence there can redraw the screen, hide what was printed before
-// it, or type into the input buffer (CWE-150). Git masks the sideband the same
-// way by default, see strbuf_add_sanitized in sideband.c[1]. That function
-// masks carriage return, and Git keeps it on the progress channel by splitting
-// lines before masking them.
-// Color sequences pass because hooks in the wild rely on them. They cannot move
-// the cursor, clear the screen or write to the input buffer.
-//
-// [1]: https://github.com/git/git/blob/v2.56.0/sideband.c
+// Tab, line feed and color sequences pass through, as hooks commonly color
+// their output and a color sequence cannot move the cursor, erase text or
+// reach the terminal's input. Every other control character is written in
+// caret notation, "^[" for an escape, so that it shows up instead of
+// taking effect. Bytes from 0x80 up are left alone: they are what UTF-8
+// text is made of.
 func sanitize(message []byte, keepCR bool) []byte {
-	var out []byte
-	for i := 0; i < len(message); i++ {
+	var (
+		out    []byte
+		copied int // message[:copied] is already in out
+	)
+
+	for i := 0; i < len(message); {
 		c := message[i]
-		if c == '\t' || c == '\n' || (c == '\r' && keepCR) || (c >= 0x20 && c != 0x7f) {
-			if out != nil {
-				out = append(out, c)
+		if c == asciiESC {
+			if n := colorSequenceLen(message[i:]); n > 0 {
+				i += n
+				continue
 			}
+		}
+		isControl := c < ' ' || c == asciiDEL
+		if !isControl || c == '\t' || c == '\n' || (c == '\r' && keepCR) {
+			i++
 			continue
+		}
+
+		// Caret notation pairs NUL with "@", 1 to 26 with "A" to "Z" and
+		// so on through "_"; DEL is "?".
+		letter := '@' + c
+		if c == asciiDEL {
+			letter = '?'
 		}
 
 		if out == nil {
 			out = make([]byte, 0, len(message)+len(message)/8+1)
-			out = append(out, message[:i]...)
 		}
-
-		if n := colorSequenceLen(message[i:]); n > 0 {
-			out = append(out, message[i:i+n]...)
-			i += n - 1
-			continue
+		if i > copied {
+			out = append(out, message[copied:i]...)
 		}
-
-		if c == 0x7f {
-			out = append(out, '^', '?')
-		} else {
-			out = append(out, '^', c+0x40)
-		}
+		out = append(out, '^', letter)
+		i++
+		copied = i
 	}
 
 	if out == nil {
 		return message
 	}
-
-	return out
+	return append(out, message[copied:]...)
 }
 
-// colorSequenceLen returns the length of the ANSI SGR sequence at the start of
-// b, ESC [ followed by digits, colons or semicolons and a final m, or 0 when b
-// does not start with one.
+// colorSequenceLen returns the length of the color sequence at the start of
+// b, or 0 when b does not start with one.
+//
+// A color sequence (SGR) is ESC "[", parameters made of digits, ";" and
+// ":", and a final "m". The parameters may be empty.
 func colorSequenceLen(b []byte) int {
-	if len(b) < 3 || b[0] != 0x1b || b[1] != '[' {
+	if len(b) < 2 || b[0] != asciiESC || b[1] != '[' {
 		return 0
 	}
 
-	for i := 2; i < len(b); i++ {
-		switch c := b[i]; {
-		case c == 'm':
-			return i + 1
-		case c >= '0' && c <= '9', c == ':', c == ';':
-		default:
-			return 0
-		}
+	afterParams := bytes.TrimLeft(b[2:], "0123456789;:")
+	if len(afterParams) == 0 || afterParams[0] != 'm' {
+		return 0
 	}
-
-	return 0
+	return len(b) - len(afterParams) + 1
 }
