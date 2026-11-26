@@ -549,9 +549,6 @@ func parentsContainingPath(path string, hash plumbing.Hash, c *object.Commit) ([
 			return nil, err
 		}
 
-		// The parent has the file if path names a blob in it. An entry with
-		// the child's hash names the child's blob, so only an entry with
-		// another hash has to be read to tell.
 		var file *object.File
 		entry, err := tree.FindEntry(path)
 		if err == nil && entry.Hash != hash {
