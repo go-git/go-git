@@ -14,6 +14,7 @@ import (
 	"github.com/go-git/go-billy/v6/util"
 
 	"github.com/go-git/go-git/v6/config"
+	"github.com/go-git/go-git/v6/internal/pathutil"
 	"github.com/go-git/go-git/v6/plumbing"
 	"github.com/go-git/go-git/v6/plumbing/filemode"
 	"github.com/go-git/go-git/v6/plumbing/format/gitignore"
@@ -49,10 +50,27 @@ func (w *Worktree) Status() (Status, error) {
 // StatusOptions defines the options for Worktree.StatusWithOptions().
 type StatusOptions struct {
 	Strategy StatusStrategy
+
+	// Path limits status to a literal file or directory, relative to the
+	// worktree root. Absolute paths inside the worktree are also accepted.
+	// Empty and "." select the whole worktree. As with git pathspecs, a
+	// trailing slash matches only a directory or submodule, never a file.
+	// Returned names remain relative to the worktree root.
+	// IsClean on the returned status reports cleanliness only within Path.
+	Path string
 }
 
 // StatusWithOptions returns the working tree status.
 func (w *Worktree) StatusWithOptions(o StatusOptions) (Status, error) {
+	var (
+		dirOnly bool
+		err     error
+	)
+	o.Path, dirOnly, err = w.statusPath(o.Path)
+	if err != nil {
+		return nil, err
+	}
+
 	var hash plumbing.Hash
 
 	ref, err := w.r.Head()
@@ -69,16 +87,105 @@ func (w *Worktree) StatusWithOptions(o StatusOptions) (Status, error) {
 		return nil, err
 	}
 
-	return w.status(cfg, o.Strategy, hash)
-}
-
-func (w *Worktree) status(cfg *config.Config, ss StatusStrategy, commit plumbing.Hash) (Status, error) {
-	s, err := ss.new(w)
+	s, err := w.status(cfg, o, hash)
 	if err != nil {
 		return nil, err
 	}
 
-	left, err := w.diffCommitWithStaging(commit, false)
+	// A trailing slash, as in "foo/", tells git to match only directories.
+	// Entries under the directory, such as "foo/bar", always match, so they
+	// stay in the result. The question is what to do with an entry named
+	// exactly "foo".
+	//
+	// Status only records leaf entries, so an entry at exactly "foo" is a
+	// file or a submodule (gitlink), never a plain directory. Of those, a
+	// trailing slash matches the gitlink but not the file: git's pathspec
+	// check treats an entry as directory-like when its mode is a tree or a
+	// gitlink[1]. Git takes that mode from the index entry when there is
+	// one, and from the HEAD entry only when the index has none[2]. So a
+	// gitlink in HEAD that the index now records as a file does not match.
+	//
+	// [1]: https://github.com/git/git/blob/v2.54.0/read-cache.h#L36-L43
+	// [2]: https://github.com/git/git/blob/v2.54.0/diff-lib.c#L533-L535
+	if _, ok := s[o.Path]; ok && dirOnly {
+		idx, err := w.r.Storer.Index()
+		if err != nil {
+			return nil, err
+		}
+
+		var gitlink bool
+		e, err := idx.Entry(o.Path)
+		switch {
+		case err == nil:
+			gitlink = e.Mode == filemode.Submodule
+		case !errors.Is(err, index.ErrEntryNotFound):
+			return nil, err
+		case !hash.IsZero():
+			c, err := w.r.CommitObject(hash)
+			if err != nil {
+				return nil, err
+			}
+			t, err := c.Tree()
+			if err != nil {
+				return nil, err
+			}
+			// A name Git refuses in trees, such as ".GIT", cannot be in HEAD.
+			e, err := t.FindEntry(o.Path)
+			notFound := errors.Is(err, object.ErrEntryNotFound) ||
+				errors.Is(err, object.ErrDirectoryNotFound) ||
+				errors.Is(err, plumbing.ErrObjectNotFound) || // a file ancestor is read as a missing tree
+				errors.Is(err, pathutil.ErrInvalidPath)
+			if err != nil && !notFound {
+				return nil, err
+			}
+			gitlink = err == nil && e.Mode == filemode.Submodule
+		}
+
+		if !gitlink {
+			delete(s, o.Path)
+		}
+	}
+
+	return s, nil
+}
+
+// statusPath cleans original into a slash-separated, worktree-relative path,
+// returning "" for the whole worktree. dirOnly reports a trailing "/" or "/.",
+// which cleaning removes but which, as in git pathspecs, limits original to
+// directories and submodules.
+func (w *Worktree) statusPath(original string) (name string, dirOnly bool, err error) {
+	slashed := filepath.ToSlash(original)
+	dirOnly = strings.HasSuffix(slashed, "/") || strings.HasSuffix(slashed, "/.")
+
+	root := w.filesystem.Root()
+	name = filepath.Clean(original)
+	if filepath.IsAbs(name) {
+		rel, err := filepath.Rel(root, name)
+		if err != nil {
+			return "", false, fmt.Errorf("path %q is not inside the worktree root %q: %w", original, root, err)
+		}
+		name = rel
+	}
+
+	name = filepath.ToSlash(name)
+	if name == ".." || strings.HasPrefix(name, "../") {
+		return "", false, fmt.Errorf("path %q is outside the worktree root %q", original, root)
+	}
+
+	if name == "." {
+		return "", dirOnly, nil
+	}
+
+	return name, dirOnly, nil
+}
+
+func (w *Worktree) status(cfg *config.Config, opts StatusOptions, commit plumbing.Hash) (Status, error) {
+	s, err := opts.Strategy.new(w, opts.Path)
+	if err != nil {
+		return nil, err
+	}
+
+	left, err := w.diffCommitWithStaging(commit, false, opts.Path)
 	if err != nil {
 		return nil, err
 	}
@@ -102,7 +209,7 @@ func (w *Worktree) status(cfg *config.Config, ss StatusStrategy, commit plumbing
 		}
 	}
 
-	right, err := w.diffStagingWithWorktree(cfg, false, true)
+	right, err := w.diffStagingWithWorktreePath(cfg, false, true, opts.Path)
 	if err != nil {
 		return nil, err
 	}
@@ -142,26 +249,34 @@ func nameFromAction(ch *merkletrie.Change) string {
 }
 
 func (w *Worktree) diffStagingWithWorktree(cfg *config.Config, reverse, excludeIgnoredChanges bool) (merkletrie.Changes, error) {
+	return w.diffStagingWithWorktreePath(cfg, reverse, excludeIgnoredChanges, "")
+}
+
+// diffStagingWithWorktreePath scopes both trees while retaining their ancestor
+// chains, so the diff still returns repository-relative paths.
+func (w *Worktree) diffStagingWithWorktreePath(cfg *config.Config, reverse, excludeIgnoredChanges bool, scope string) (merkletrie.Changes, error) {
 	idx, err := w.r.Storer.Index()
 	if err != nil {
 		return nil, err
 	}
-	return w.diffIndexWithWorktree(cfg, idx, reverse, excludeIgnoredChanges)
+	return w.diffIndexWithWorktree(cfg, idx, reverse, excludeIgnoredChanges, scope)
 }
 
 // diffIndexWithWorktree is diffStagingWithWorktree for idx, which need not be
 // the stored index: a reset compares the worktree with the index it is about
 // to store.
-func (w *Worktree) diffIndexWithWorktree(cfg *config.Config, idx *index.Index, reverse, excludeIgnoredChanges bool) (merkletrie.Changes, error) {
+func (w *Worktree) diffIndexWithWorktree(cfg *config.Config, idx *index.Index, reverse, excludeIgnoredChanges bool, scope string) (merkletrie.Changes, error) {
 	from := mindex.NewRootNodeWithOptions(idx, mindex.RootNodeOptions{
 		UpholdExecutableBit: cfg.Core.FileMode,
+		Path:                scope,
 	})
-	submodules, err := w.getSubmodulesStatus(cfg)
+	submodules, err := w.getSubmodulesStatus(cfg, scope)
 	if err != nil {
 		return nil, err
 	}
 
 	fsOpts := filesystem.Options{
+		Path:         scope,
 		AutoCRLF:     cfg.Core.AutoCRLF == "true" || cfg.Core.AutoCRLF == "input",
 		Index:        idx,
 		ObjectFormat: cfg.Extensions.ObjectFormat,
@@ -220,7 +335,7 @@ func (w *Worktree) ignoreScope() *gitignore.Scope {
 	return gitignore.NewScope(patterns)
 }
 
-func (w *Worktree) getSubmodulesStatus(cfg *config.Config) (map[string]plumbing.Hash, error) {
+func (w *Worktree) getSubmodulesStatus(cfg *config.Config, scope string) (map[string]plumbing.Hash, error) {
 	o := map[string]plumbing.Hash{}
 
 	sub, err := w.submodulesWithConfig(cfg)
@@ -228,7 +343,20 @@ func (w *Worktree) getSubmodulesStatus(cfg *config.Config) (map[string]plumbing.
 		return nil, err
 	}
 
-	status, err := sub.Status()
+	// The filesystem walker uses this map to distinguish submodules from
+	// ordinary directories and stops at a submodule above the requested path.
+	// For scope "docs/module/file.txt", keep the gitlink at "docs/module":
+	// omitting it would leave a directory on disk that the walker could enter,
+	// incorrectly reporting the submodule's files as untracked in the parent
+	// repository, whose index records only the gitlink's commit hash.
+	selected := make(Submodules, 0, len(sub))
+	for _, module := range sub {
+		if pathutil.IsWithinPath(module.c.Path, scope) || strings.HasPrefix(scope, module.c.Path+"/") {
+			selected = append(selected, module)
+		}
+	}
+
+	status, err := selected.Status()
 	if err != nil {
 		return nil, err
 	}
@@ -245,7 +373,7 @@ func (w *Worktree) getSubmodulesStatus(cfg *config.Config) (map[string]plumbing.
 	return o, nil
 }
 
-func (w *Worktree) diffCommitWithStaging(commit plumbing.Hash, reverse bool) (merkletrie.Changes, error) {
+func (w *Worktree) diffCommitWithStaging(commit plumbing.Hash, reverse bool, scope string) (merkletrie.Changes, error) {
 	var t *object.Tree
 	if !commit.IsZero() {
 		c, err := w.r.CommitObject(commit)
@@ -259,13 +387,19 @@ func (w *Worktree) diffCommitWithStaging(commit plumbing.Hash, reverse bool) (me
 		}
 	}
 
-	return w.diffTreeWithStaging(t, reverse)
+	return w.diffTreeWithStagingPath(t, reverse, scope)
 }
 
 func (w *Worktree) diffTreeWithStaging(t *object.Tree, reverse bool) (merkletrie.Changes, error) {
+	return w.diffTreeWithStagingPath(t, reverse, "")
+}
+
+// diffTreeWithStagingPath limits both the commit tree and index tree to scope.
+// An empty scope compares the full trees.
+func (w *Worktree) diffTreeWithStagingPath(t *object.Tree, reverse bool, scope string) (merkletrie.Changes, error) {
 	var from noder.Noder
 	if t != nil {
-		from = object.NewTreeRootNode(t)
+		from = object.NewTreeRootNodeWithOptions(t, object.TreeRootNodeOptions{Path: scope})
 	}
 
 	idx, err := w.r.Storer.Index()
@@ -273,7 +407,10 @@ func (w *Worktree) diffTreeWithStaging(t *object.Tree, reverse bool) (merkletrie
 		return nil, err
 	}
 
-	to := mindex.NewRootNode(idx)
+	to := mindex.NewRootNodeWithOptions(idx, mindex.RootNodeOptions{
+		UpholdExecutableBit: true,
+		Path:                scope,
+	})
 
 	if reverse {
 		return merkletrie.DiffTree(to, from, diffTreeIsEquals)
@@ -407,16 +544,6 @@ func (w *Worktree) doAdd(path string, ignorePattern []gitignore.Pattern, skipSta
 
 	fi, err := w.filesystem.Lstat(path)
 
-	// status is required for doAddDirectory
-	var s Status
-	var err2 error
-	if !skipStatus || fi == nil || fi.IsDir() {
-		s, err2 = w.Status()
-		if err2 != nil {
-			return plumbing.ZeroHash, err2
-		}
-	}
-
 	path = filepath.Clean(path)
 	if filepath.IsAbs(path) {
 		root := w.filesystem.Root()
@@ -430,6 +557,16 @@ func (w *Worktree) doAdd(path string, ignorePattern []gitignore.Pattern, skipSta
 		path = relPath
 	}
 	path = filepath.ToSlash(path)
+
+	// Directory additions need status even when SkipStatus is set.
+	var s Status
+	var err2 error
+	if !skipStatus || fi == nil || fi.IsDir() {
+		s, err2 = w.StatusWithOptions(StatusOptions{Path: path})
+		if err2 != nil {
+			return plumbing.ZeroHash, err2
+		}
+	}
 
 	if err != nil || !fi.IsDir() {
 		added, h, err = w.doAddFile(cfg, idx, s, path, ignorePattern)
@@ -459,10 +596,37 @@ func (w *Worktree) AddGlob(pattern string) error {
 		}()
 	}
 
-	// TODO(mcuadros): deprecate in favor of AddWithOption in v6.
-	files, err := util.Glob(w.filesystem, pattern)
+	// Make an absolute pattern relative before globbing, as git does for
+	// pathspecs. The worktree filesystem rejects volume names, so on windows
+	// an absolute pattern would otherwise never match.
+	relPattern, dirOnly, err := w.statusPath(pattern)
 	if err != nil {
 		return err
+	}
+	if relPattern == "" {
+		relPattern = "."
+	}
+
+	// TODO(mcuadros): deprecate in favor of AddWithOption in v6.
+	files, err := util.Glob(w.filesystem, relPattern)
+	if err != nil {
+		return err
+	}
+
+	// Globbing the cleaned pattern also matches files, which a trailing slash
+	// excludes, as git add does for "*.txt/".
+	if dirOnly {
+		dirs := files[:0]
+		for _, name := range files {
+			fi, err := w.filesystem.Lstat(name)
+			if err != nil {
+				return err
+			}
+			if fi.IsDir() {
+				dirs = append(dirs, name)
+			}
+		}
+		files = dirs
 	}
 
 	if len(files) == 0 {
@@ -474,7 +638,23 @@ func (w *Worktree) AddGlob(pattern string) error {
 		return err
 	}
 
-	s, err := w.Status()
+	for i, name := range files {
+		files[i], _, err = w.statusPath(name)
+		if err != nil {
+			return err
+		}
+	}
+
+	// Bound the status walk by the matches' common parent. The staging loop
+	// below still selects exact glob matches, not everything under this path.
+	scope := path.Dir(files[0])
+	for _, name := range files[1:] {
+		for scope != "." && !pathutil.IsWithinPath(name, scope) {
+			scope = path.Dir(scope)
+		}
+	}
+
+	s, err := w.StatusWithOptions(StatusOptions{Path: scope})
 	if err != nil {
 		return err
 	}
