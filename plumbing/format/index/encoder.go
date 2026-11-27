@@ -106,7 +106,7 @@ func (e *Encoder) encodeEntries(idx *Index) error {
 }
 
 func (e *Encoder) encodeEntry(idx *Index, entry *Entry) error {
-	sec, nsec, err := e.timeToUint32(&entry.CreatedAt)
+	sec, nsec, err := e.timeToUint32(&entry.ChangedAt)
 	if err != nil {
 		return err
 	}

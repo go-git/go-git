@@ -18,7 +18,7 @@ func TestEncode(t *testing.T) {
 	idx := &Index{
 		Version: 2,
 		Entries: []*Entry{{
-			CreatedAt:  time.Now(),
+			ChangedAt:  time.Now(),
 			ModifiedAt: time.Now(),
 			Dev:        4242,
 			Inode:      424242,
@@ -29,12 +29,12 @@ func TestEncode(t *testing.T) {
 			Hash:       plumbing.NewHash("e25b29c8946e0e192fae2edc1dabf7be71e8ecf3"),
 			Name:       "foo",
 		}, {
-			CreatedAt:  time.Now(),
+			ChangedAt:  time.Now(),
 			ModifiedAt: time.Now(),
 			Name:       "bar",
 			Size:       82,
 		}, {
-			CreatedAt:  time.Now(),
+			ChangedAt:  time.Now(),
 			ModifiedAt: time.Now(),
 			Name:       strings.Repeat(" ", 20),
 			Size:       82,
@@ -69,13 +69,13 @@ func TestEncodeLongName(t *testing.T) {
 		Version: 2,
 		Entries: []*Entry{
 			{
-				CreatedAt:  time.Now(),
+				ChangedAt:  time.Now(),
 				ModifiedAt: time.Now(),
 				Name:       longName,
 				Size:       1,
 			},
 			{
-				CreatedAt:  time.Now(),
+				ChangedAt:  time.Now(),
 				ModifiedAt: time.Now(),
 				Name:       "short",
 				Size:       2,
@@ -103,27 +103,27 @@ func TestEncodeSortedByNameThenStage(t *testing.T) {
 	idx := &Index{
 		Version: 2,
 		Entries: []*Entry{{
-			CreatedAt:  time.Now(),
+			ChangedAt:  time.Now(),
 			ModifiedAt: time.Now(),
 			Name:       "foo",
 			Stage:      TheirMode,
 		}, {
-			CreatedAt:  time.Now(),
+			ChangedAt:  time.Now(),
 			ModifiedAt: time.Now(),
 			Name:       "foo",
 			Stage:      OurMode,
 		}, {
-			CreatedAt:  time.Now(),
+			ChangedAt:  time.Now(),
 			ModifiedAt: time.Now(),
 			Name:       "foo",
 			Stage:      AncestorMode,
 		}, {
-			CreatedAt:  time.Now(),
+			ChangedAt:  time.Now(),
 			ModifiedAt: time.Now(),
 			Name:       "bar",
 			Stage:      Merged,
 		}, {
-			CreatedAt:  time.Now(),
+			ChangedAt:  time.Now(),
 			ModifiedAt: time.Now(),
 			Name:       "baz",
 			Stage:      OurMode,
@@ -162,7 +162,7 @@ func TestEncodeV4(t *testing.T) {
 	idx := &Index{
 		Version: 4,
 		Entries: []*Entry{{
-			CreatedAt:  time.Now(),
+			ChangedAt:  time.Now(),
 			ModifiedAt: time.Now(),
 			Dev:        4242,
 			Inode:      424242,
@@ -173,22 +173,22 @@ func TestEncodeV4(t *testing.T) {
 			Hash:       plumbing.NewHash("e25b29c8946e0e192fae2edc1dabf7be71e8ecf3"),
 			Name:       "foo",
 		}, {
-			CreatedAt:  time.Now(),
+			ChangedAt:  time.Now(),
 			ModifiedAt: time.Now(),
 			Name:       "bar",
 			Size:       82,
 		}, {
-			CreatedAt:  time.Now(),
+			ChangedAt:  time.Now(),
 			ModifiedAt: time.Now(),
 			Name:       strings.Repeat(" ", 20),
 			Size:       82,
 		}, {
-			CreatedAt:  time.Now(),
+			ChangedAt:  time.Now(),
 			ModifiedAt: time.Now(),
 			Name:       "baz/bar",
 			Size:       82,
 		}, {
-			CreatedAt:  time.Now(),
+			ChangedAt:  time.Now(),
 			ModifiedAt: time.Now(),
 			Name:       "baz/bar/bar",
 			Size:       82,
@@ -292,7 +292,7 @@ func TestEncodeSkipHash(t *testing.T) {
 			idx := &Index{
 				Version: 2,
 				Entries: []*Entry{{
-					CreatedAt:  time.Now(),
+					ChangedAt:  time.Now(),
 					ModifiedAt: time.Now(),
 					Dev:        4242,
 					Inode:      424242,
@@ -303,7 +303,7 @@ func TestEncodeSkipHash(t *testing.T) {
 					Hash:       h1,
 					Name:       "foo",
 				}, {
-					CreatedAt:  time.Now(),
+					ChangedAt:  time.Now(),
 					ModifiedAt: time.Now(),
 					Name:       "bar",
 					Hash:       h2,

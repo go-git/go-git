@@ -183,7 +183,7 @@ var basicIndex = Index{
 	Version: 2,
 	Entries: []*Entry{
 		{
-			CreatedAt:  time.Unix(int64(1480626693), 498593596),
+			ChangedAt:  time.Unix(int64(1480626693), 498593596),
 			ModifiedAt: time.Unix(int64(1480626693), 498593596),
 			Dev:        uint32(39),
 			Inode:      uint32(140626),
@@ -195,7 +195,7 @@ var basicIndex = Index{
 			Mode:       filemode.Regular,
 		},
 		{
-			CreatedAt:  time.Unix(int64(1480626693), 498593596),
+			ChangedAt:  time.Unix(int64(1480626693), 498593596),
 			ModifiedAt: time.Unix(int64(1480626693), 498593596),
 			Dev:        uint32(39),
 			Inode:      uint32(140627),
@@ -207,7 +207,7 @@ var basicIndex = Index{
 			Mode:       filemode.Regular,
 		},
 		{
-			CreatedAt:  time.Unix(int64(1480626693), 498593596),
+			ChangedAt:  time.Unix(int64(1480626693), 498593596),
 			ModifiedAt: time.Unix(int64(1480626693), 498593596),
 			Dev:        uint32(39),
 			Inode:      uint32(140628),
@@ -219,7 +219,7 @@ var basicIndex = Index{
 			Mode:       filemode.Regular,
 		},
 		{
-			CreatedAt:  time.Unix(int64(1480626693), 498593596),
+			ChangedAt:  time.Unix(int64(1480626693), 498593596),
 			ModifiedAt: time.Unix(int64(1480626693), 498593596),
 			Dev:        uint32(39),
 			Inode:      uint32(140629),
@@ -231,7 +231,7 @@ var basicIndex = Index{
 			Mode:       filemode.Regular,
 		},
 		{
-			CreatedAt:  time.Unix(int64(1480626693), 498593596),
+			ChangedAt:  time.Unix(int64(1480626693), 498593596),
 			ModifiedAt: time.Unix(int64(1480626693), 498593596),
 			Dev:        uint32(39),
 			Inode:      uint32(140631),
@@ -243,7 +243,7 @@ var basicIndex = Index{
 			Mode:       filemode.Regular,
 		},
 		{
-			CreatedAt:  time.Unix(int64(1480626693), 498593596),
+			ChangedAt:  time.Unix(int64(1480626693), 498593596),
 			ModifiedAt: time.Unix(int64(1480626693), 498593596),
 			Dev:        uint32(39),
 			Inode:      uint32(140633),
@@ -255,7 +255,7 @@ var basicIndex = Index{
 			Mode:       filemode.Regular,
 		},
 		{
-			CreatedAt:  time.Unix(int64(1480626693), 498593596),
+			ChangedAt:  time.Unix(int64(1480626693), 498593596),
 			ModifiedAt: time.Unix(int64(1480626693), 498593596),
 			Dev:        uint32(39),
 			Inode:      uint32(140634),
@@ -267,7 +267,7 @@ var basicIndex = Index{
 			Mode:       filemode.Regular,
 		},
 		{
-			CreatedAt:  time.Unix(int64(1480626693), 498593596),
+			ChangedAt:  time.Unix(int64(1480626693), 498593596),
 			ModifiedAt: time.Unix(int64(1480626693), 498593596),
 			Dev:        uint32(39),
 			Inode:      uint32(140636),
@@ -279,7 +279,7 @@ var basicIndex = Index{
 			Mode:       filemode.Regular,
 		},
 		{
-			CreatedAt:  time.Unix(int64(1480626693), 498593596),
+			ChangedAt:  time.Unix(int64(1480626693), 498593596),
 			ModifiedAt: time.Unix(int64(1480626693), 498593596),
 			Dev:        uint32(39),
 			Inode:      uint32(140638),
@@ -330,7 +330,7 @@ func TestDecodeMergeConflict(t *testing.T) {
 	// staged files
 	for i, e := range idx.Entries[4:7] {
 		assert.Equal(t, expected[i].Stage, e.Stage)
-		assert.True(t, e.CreatedAt.IsZero())
+		assert.True(t, e.ChangedAt.IsZero())
 		assert.True(t, e.ModifiedAt.IsZero())
 		assert.Equal(t, uint32(0), e.Dev)
 		assert.Equal(t, uint32(0), e.Inode)
@@ -447,7 +447,7 @@ func TestDecodeSkipHash(t *testing.T) {
 			idx := &Index{
 				Version: 2,
 				Entries: []*Entry{{
-					CreatedAt:  time.Now(),
+					ChangedAt:  time.Now(),
 					ModifiedAt: time.Now(),
 					Name:       "file.txt",
 					Hash:       eh,
@@ -626,14 +626,14 @@ func TestDecodeV4StripLength(t *testing.T) {
 				Version: 4,
 				Entries: []*Entry{
 					{
-						CreatedAt:  time.Now(),
+						ChangedAt:  time.Now(),
 						ModifiedAt: time.Now(),
 						Name:       "abc",
 						Hash:       h1,
 						Size:       1,
 					},
 					{
-						CreatedAt:  time.Now(),
+						ChangedAt:  time.Now(),
 						ModifiedAt: time.Now(),
 						Name:       "abd",
 						Hash:       h2,
@@ -753,7 +753,7 @@ func TestDecodeNameLength0xFFF(t *testing.T) {
 				var eh plumbing.Hash
 				eh.ResetBySize(hashSize)
 				entries[i] = &Entry{
-					CreatedAt:  time.Now(),
+					ChangedAt:  time.Now(),
 					ModifiedAt: time.Now(),
 					Name:       name,
 					Hash:       eh,
@@ -807,7 +807,7 @@ func TestDecodeNameLength0xFFFPatchedFlags(t *testing.T) {
 			idx := &Index{
 				Version: 2,
 				Entries: []*Entry{{
-					CreatedAt:  time.Now(),
+					ChangedAt:  time.Now(),
 					ModifiedAt: time.Now(),
 					Name:       "hello",
 					Hash:       eh,
