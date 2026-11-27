@@ -1392,7 +1392,24 @@ func (w *Worktree) submodulesWithConfig(cfg *config.Config) (Submodules, error) 
 		}
 	}
 
+	idx, err := w.r.Storer.Index()
+	if err != nil {
+		return nil, err
+	}
+
 	for _, s := range m.Submodules {
+		// Git only treats a .gitmodules section as a submodule when the
+		// index holds a gitlink (mode 160000) at its path. Sections left
+		// behind after a submodule was removed from the tree are skipped
+		// by git submodule status, init and update alike.
+		e, err := idx.Entry(s.Path)
+		if err != nil && !errors.Is(err, index.ErrEntryNotFound) {
+			return nil, err
+		}
+		if e == nil || e.Mode != filemode.Submodule {
+			continue
+		}
+
 		sub := w.newSubmodule(s, cfg.Submodules[s.Name])
 		subCfg := sub.Config()
 		resolvedURL, err := resolveModuleURL(originURL, subCfg.URL)

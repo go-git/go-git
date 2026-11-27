@@ -3364,6 +3364,18 @@ func (s *WorktreeSuite) TestSubmodules_URLResolution() {
 			err = util.WriteFile(fs, ".gitmodules", []byte(tc.gitmodules), 0o644)
 			s.NoError(err)
 
+			// Submodules only reports sections that have a gitlink in the index.
+			idx, err := r.Storer.Index()
+			s.NoError(err)
+			for name := range tc.expected {
+				idx.Entries = append(idx.Entries, &index.Entry{
+					Name: name,
+					Hash: plumbing.NewHash("1111111111111111111111111111111111111111"),
+					Mode: filemode.Submodule,
+				})
+			}
+			s.NoError(r.Storer.SetIndex(idx))
+
 			submodules, err := w.Submodules()
 			s.NoError(err)
 			s.Len(submodules, len(tc.expected))

@@ -9,6 +9,7 @@ import (
 	"testing"
 
 	"github.com/go-git/go-billy/v6/memfs"
+	"github.com/go-git/go-billy/v6/util"
 	fixtures "github.com/go-git/go-git-fixtures/v6"
 	"github.com/stretchr/testify/require"
 
@@ -16,6 +17,7 @@ import (
 	"github.com/go-git/go-git/v6/internal/pathutil"
 	"github.com/go-git/go-git/v6/plumbing"
 	"github.com/go-git/go-git/v6/plumbing/cache"
+	"github.com/go-git/go-git/v6/plumbing/filemode"
 	"github.com/go-git/go-git/v6/plumbing/format/index"
 	"github.com/go-git/go-git/v6/storage/filesystem"
 	"github.com/go-git/go-git/v6/storage/filesystem/dotgit"
@@ -325,7 +327,7 @@ func newRepoWithStaleGitmodulesEntry(t *testing.T) (string, *Repository) {
 	return dir, r
 }
 
-func TestSubmodulesUpdateSkipsEntryMissingFromIndex(t *testing.T) {
+func TestSubmodulesExcludesEntryMissingFromIndex(t *testing.T) {
 	t.Parallel()
 
 	_, r := newRepoWithStaleGitmodulesEntry(t)
@@ -334,19 +336,22 @@ func TestSubmodulesUpdateSkipsEntryMissingFromIndex(t *testing.T) {
 	wt, err := r.Worktree()
 	require.NoError(t, err)
 
+	// A .gitmodules section without a gitlink in the index is not a
+	// submodule as far as git is concerned: git submodule status, init
+	// and update all skip it, so Submodules must not return it.
 	sm, err := wt.Submodules()
 	require.NoError(t, err)
-	require.Len(t, sm, 1)
+	require.Empty(t, sm)
 
 	require.NoError(t, sm.Update(&SubmoduleUpdateOptions{Init: true}))
 
-	// The skipped entry must not have been initialized into .git/config.
+	// The excluded entry must not have been initialized into .git/config.
 	cfg, err := r.Config()
 	require.NoError(t, err)
 	require.NotContains(t, cfg.Submodules, "ghost")
 }
 
-func TestSubmoduleUpdateEntryMissingFromIndex(t *testing.T) {
+func TestSubmoduleEntryMissingFromIndexIsNotFound(t *testing.T) {
 	t.Parallel()
 
 	_, r := newRepoWithStaleGitmodulesEntry(t)
@@ -355,11 +360,49 @@ func TestSubmoduleUpdateEntryMissingFromIndex(t *testing.T) {
 	wt, err := r.Worktree()
 	require.NoError(t, err)
 
-	sm := namedSubmodule(t, wt, "ghost")
+	_, err = wt.Submodule("ghost")
+	require.ErrorIs(t, err, ErrSubmoduleNotFound)
+}
 
-	err = sm.Update(&SubmoduleUpdateOptions{Init: true})
-	require.ErrorIs(t, err, index.ErrEntryNotFound)
-	require.ErrorContains(t, err, `submodule "ghost"`)
+// Git only considers a .gitmodules section a submodule when the index
+// records a gitlink (mode 160000) at its path. An entry whose path holds
+// any other mode, or no entry at all, is left out of Submodules.
+func TestSubmodulesRequiresGitlinkInIndex(t *testing.T) {
+	t.Parallel()
+
+	fs := memfs.New()
+	r, err := Init(memory.NewStorage(), WithWorkTree(fs))
+	require.NoError(t, err)
+
+	wt, err := r.Worktree()
+	require.NoError(t, err)
+
+	gitmodules := "[submodule \"real\"]\n\tpath = real\n\turl = https://example.com/real.git\n" +
+		"[submodule \"replaced\"]\n\tpath = replaced\n\turl = https://example.com/replaced.git\n" +
+		"[submodule \"ghost\"]\n\tpath = ghost\n\turl = https://example.com/ghost.git\n"
+	require.NoError(t, util.WriteFile(fs, ".gitmodules", []byte(gitmodules), 0o644))
+	require.NoError(t, util.WriteFile(fs, "f", []byte("x\n"), 0o644))
+
+	_, err = wt.Add(".gitmodules")
+	require.NoError(t, err)
+	_, err = wt.Add("f")
+	require.NoError(t, err)
+	_, err = wt.Commit("submodules", &CommitOptions{Author: defaultSignature()})
+	require.NoError(t, err)
+
+	idx, err := r.Storer.Index()
+	require.NoError(t, err)
+	idx.Entries = append(idx.Entries,
+		&index.Entry{Name: "real", Hash: plumbing.NewHash("1111111111111111111111111111111111111111"), Mode: filemode.Submodule},
+		// A regular file now sits where a submodule used to be.
+		&index.Entry{Name: "replaced", Hash: plumbing.NewHash("2222222222222222222222222222222222222222"), Mode: filemode.Regular},
+	)
+	require.NoError(t, r.Storer.SetIndex(idx))
+
+	subs, err := wt.Submodules()
+	require.NoError(t, err)
+	require.Len(t, subs, 1)
+	require.Equal(t, "real", subs[0].Config().Name)
 }
 
 func TestCloneRecurseSubmodulesSkipsEntryMissingFromIndex(t *testing.T) {
