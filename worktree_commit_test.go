@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 	"log"
+	"os"
 	"path/filepath"
 	"runtime"
 	"slices"
@@ -795,6 +796,47 @@ func (s *WorktreeSuite) TestCherryPick() {
 	// cherry-pick with no commit options
 	err = w.CherryPick(nil, OursMergeStrategy, rmCommit)
 	s.ErrorIs(err, ErrCannotCherryPickWithoutCommitOptions)
+}
+
+func (s *WorktreeSuite) TestCherryPickWritesNestedFileAtFullPath() {
+	fs := memfs.New()
+
+	r, err := Init(memory.NewStorage(), WithWorkTree(fs))
+	s.Require().NoError(err)
+	defer func() { _ = r.Close() }()
+
+	w, err := r.Worktree()
+	s.Require().NoError(err)
+
+	s.Require().NoError(util.WriteFile(fs, "README.md", []byte("README File"), 0o644))
+	_, err = w.Add("README.md")
+	s.Require().NoError(err)
+	initHash, err := w.Commit("initial commit\n", &CommitOptions{Author: defaultSignature()})
+	s.Require().NoError(err)
+
+	s.Require().NoError(util.WriteFile(fs, "dir/sub/file", []byte("nested"), 0o644))
+	_, err = w.Add("dir/sub/file")
+	s.Require().NoError(err)
+	nestedHash, err := w.Commit("add nested file\n", &CommitOptions{Author: defaultSignature()})
+	s.Require().NoError(err)
+	nestedCommit, err := r.CommitObject(nestedHash)
+	s.Require().NoError(err)
+
+	s.Require().NoError(w.Checkout(&CheckoutOptions{Hash: initHash}))
+
+	err = w.CherryPick(&CommitOptions{Author: defaultSignature(), AllowEmptyCommits: true}, TheirsMergeStrategy, nestedCommit)
+	s.Require().NoError(err)
+
+	content, err := util.ReadFile(fs, "dir/sub/file")
+	s.Require().NoError(err)
+	s.Equal("nested", string(content))
+
+	_, err = fs.Lstat("file")
+	s.ErrorIs(err, os.ErrNotExist)
+
+	status, err := w.Status()
+	s.Require().NoError(err)
+	s.True(status.IsClean(), "status after cherry-pick: %s", status)
 }
 
 func (s *WorktreeSuite) TestCherryPickRejectsInvalidPaths() {

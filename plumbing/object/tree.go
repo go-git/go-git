@@ -49,8 +49,9 @@ const maxTreeEntryNameLen = 4096
 // Decode accepts some structurally invalid trees, including duplicate names
 // and names containing slashes, but rejects malformed encoding and empty names.
 // Validate checks structural constraints on this tree without loading subtrees.
-// Read methods do not call Validate: FindEntry, TreeEntryFile, and TreeWalker.Next
-// apply path checks, and FindEntry descends only through directory entries.
+// Read methods do not call Validate: FindEntry, FileFromEntry, TreeEntryFile,
+// and TreeWalker.Next apply path checks, and FindEntry descends only through
+// directory entries.
 // Internal diff walkers can disable path validation.
 type Tree struct {
 	Entries []TreeEntry
@@ -99,6 +100,32 @@ func (t *Tree) File(path string) (*File, error) {
 	e, err := t.FindEntry(path)
 	if err != nil {
 		return nil, ErrFileNotFound
+	}
+
+	blob, err := GetBlob(t.s, e.Hash)
+	if err != nil {
+		if errors.Is(err, plumbing.ErrObjectNotFound) {
+			return nil, ErrFileNotFound
+		}
+		return nil, err
+	}
+
+	return NewFile(path, e.Mode, blob), nil
+}
+
+// FileFromEntry creates a File from a TreeEntry already looked up, without a
+// second FindEntry for the same path.
+//
+// path is used as the File's Name, so it is validated against
+// pathutil.ValidTreePath for the same reason FindEntry validates: this is a
+// boundary where tree data leaves the store as a *File whose Name a caller can
+// hand to filesystem operations.
+func (t *Tree) FileFromEntry(path string, e *TreeEntry) (*File, error) {
+	if e == nil {
+		return nil, ErrFileNotFound
+	}
+	if err := pathutil.ValidTreePath(path); err != nil {
+		return nil, err
 	}
 
 	blob, err := GetBlob(t.s, e.Hash)

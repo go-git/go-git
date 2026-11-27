@@ -2423,6 +2423,69 @@ func TestTreeEntryFileRejectsDangerousNames(t *testing.T) {
 	}
 }
 
+// TestFileFromEntryRejectsDangerousNames pins the validation gate in
+// FileFromEntry: it hands the caller a *File whose Name comes from path
+// rather than from the entry, so it must fail closed on the same shapes
+// pathutil.ValidTreePath rejects, regardless of whether the blob fetch
+// would succeed. The blob is staged before each case so a missing-blob
+// error cannot mask a missing validator.
+func TestFileFromEntryRejectsDangerousNames(t *testing.T) {
+	t.Parallel()
+
+	store := memory.NewStorage()
+	blob := &plumbing.MemoryObject{}
+	blob.SetType(plumbing.BlobObject)
+	bw, err := blob.Writer()
+	require.NoError(t, err)
+	_, err = bw.Write([]byte("payload"))
+	require.NoError(t, err)
+	require.NoError(t, bw.Close())
+	blobHash, err := store.SetEncodedObject(blob)
+	require.NoError(t, err)
+
+	cases := []struct {
+		name      string
+		entryName string
+	}{
+		{"empty name", ""},
+		{".git", ".git"},
+		{"git~1 short name", "git~1"},
+		{"NTFS trailing space", ".git "},
+		{"NTFS trailing dot", ".git."},
+		{"NTFS alternate data stream", ".git::$INDEX_ALLOCATION"},
+		{"NTFS trailing space on git~1", "git~1 "},
+		{"NTFS alternate data stream on git~1", "git~1::$DATA"},
+		{"HFS+ zero-width character", ".g\u200cit"},
+		{"dot-dot traversal", ".."},
+		{"single dot", "."},
+		{"control character", "foo\x01bar"},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+
+			tree := &Tree{s: store}
+			f, err := tree.FileFromEntry(tc.entryName, &TreeEntry{
+				Name: tc.entryName,
+				Mode: filemode.Regular,
+				Hash: blobHash,
+			})
+			assert.Nil(t, f, "FileFromEntry should not return a *File for %q", tc.entryName)
+			assert.ErrorIs(t, err, pathutil.ErrInvalidPath)
+		})
+	}
+}
+
+func TestFileFromEntryRejectsNilEntry(t *testing.T) {
+	t.Parallel()
+
+	tree := &Tree{s: memory.NewStorage()}
+	f, err := tree.FileFromEntry("a", nil)
+	assert.Nil(t, f)
+	assert.ErrorIs(t, err, ErrFileNotFound)
+}
+
 // TestTreeWalkerNextRejectsDangerousNames pins the validation gate
 // added to TreeWalker.Next: enumeration must surface an attacker-shaped
 // entry name as an error rather than handing the joined path to the
