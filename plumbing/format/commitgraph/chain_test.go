@@ -438,6 +438,7 @@ func TestOpenChainIndexTrailingContent(t *testing.T) {
 		{name: "partial line", trailer: "abc", complete: true},
 		{name: "short line", trailer: "abc\n", complete: true},
 		{name: "entry-length line", trailer: strings.Repeat("x", 40) + "\n", complete: false},
+		{name: "unterminated entry-length line", trailer: strings.Repeat("x", 41), complete: false},
 	}
 
 	for _, tc := range tests {

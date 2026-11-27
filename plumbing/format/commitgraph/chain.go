@@ -49,6 +49,11 @@ func readChain(r io.Reader, o options, maxLines int) ([]string, error) {
 		line, err := bufRd.ReadSlice('\n')
 		if err != nil {
 			if err == io.EOF {
+				// In a sized chain, a partial line within the record
+				// count is malformed. OpenChainFile ignores such tails.
+				if maxLines >= 0 && len(line) > 0 {
+					return chain, ErrMalformedCommitGraphFile
+				}
 				break
 			}
 			return chain, err
