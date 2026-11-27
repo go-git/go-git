@@ -144,12 +144,14 @@ type LsRefsOutput struct {
 	UnbornHead plumbing.ReferenceName
 }
 
-// Encode writes the ls-refs response lines as pkt-lines following the v2
-// grammar: "<oid> SP <refname> [SP symref-target:<target>] [SP peeled:<oid>]",
-// or "unborn SP <refname> SP symref-target:<target>" for an unborn HEAD. Peeled
-// "^{}" entries are folded into their base ref's line as a peeled attribute, and
-// a symbolic ref carries the resolved oid of its target when present. The caller
-// is responsible for writing the flush-pkt after these lines.
+// Encode writes the response as v2 ls-refs pkt-lines, folding peeled "^{}"
+// entries into their base ref's line. The caller writes the closing flush-pkt.
+//
+// A symbolic ref is written with the oid of its target. HEAD is written as
+// unborn only when its target is UnbornHead. Any other symbolic ref whose
+// target is not in References is left out, as upstream ls-refs leaves out a
+// dangling symref (ls-refs.c send_ref). Decode does not keep the oid of a
+// symbolic ref, so a HEAD whose target a ref-prefix left out is left out too.
 func (r *LsRefsOutput) Encode(w io.Writer) error {
 	hashByName := make(map[string]plumbing.Hash, len(r.References))
 	for _, ref := range r.References {
@@ -167,9 +169,14 @@ func (r *LsRefsOutput) Encode(w io.Writer) error {
 		}
 
 		if ref.Type() == plumbing.SymbolicReference {
-			oid := "unborn"
-			if h, ok := hashByName[ref.Target().String()]; ok && !h.IsZero() {
+			var oid string
+			switch h, ok := hashByName[ref.Target().String()]; {
+			case ok && !h.IsZero():
 				oid = h.String()
+			case ref.Name() == plumbing.HEAD && r.UnbornHead != "" && ref.Target() == r.UnbornHead:
+				oid = "unborn"
+			default:
+				continue
 			}
 			if _, err := pktline.Writef(w, "%s %s symref-target:%s\n", oid, name, ref.Target()); err != nil {
 				return err
@@ -218,8 +225,7 @@ func (r *LsRefsOutput) Decode(rd io.Reader) error {
 		if unbornHead != "" {
 			r.UnbornHead = unbornHead
 			// A repeated unborn HEAD replaces the earlier one, since upstream
-			// keeps the last target (connect.c process_ref_v2). Keeping a
-			// single entry lets callers discount it from References.
+			// keeps the last target (connect.c process_ref_v2).
 			if unbornAt >= 0 {
 				r.References[unbornAt] = refs[0]
 				continue

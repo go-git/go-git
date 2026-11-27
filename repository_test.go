@@ -36,11 +36,14 @@ import (
 	"github.com/go-git/go-git/v6/internal/test/gitenv"
 	"github.com/go-git/go-git/v6/plumbing"
 	"github.com/go-git/go-git/v6/plumbing/cache"
+	"github.com/go-git/go-git/v6/plumbing/client"
 	formatcfg "github.com/go-git/go-git/v6/plumbing/format/config"
 	"github.com/go-git/go-git/v6/plumbing/object"
+	"github.com/go-git/go-git/v6/plumbing/protocol"
 	"github.com/go-git/go-git/v6/plumbing/protocol/packp"
 	"github.com/go-git/go-git/v6/plumbing/storer"
 	"github.com/go-git/go-git/v6/plumbing/transport"
+	"github.com/go-git/go-git/v6/plumbing/transport/file"
 	"github.com/go-git/go-git/v6/storage"
 	"github.com/go-git/go-git/v6/storage/filesystem"
 	"github.com/go-git/go-git/v6/storage/memory"
@@ -698,6 +701,77 @@ func TestPlainCloneContext_EmptyRemoteReturnsError(t *testing.T) {
 	require.ErrorIs(t, err, transport.ErrEmptyRemoteRepository)
 }
 
+// git clone checks a requested branch or tag before it looks for an empty
+// remote (builtin/clone.c), so naming one that an empty remote cannot have
+// is a missing ref, and AllowEmptyRepo does not apply.
+func TestPlainCloneContext_EmptyRemoteNamedRefIsNotFound(t *testing.T) {
+	t.Parallel()
+
+	remote := filepath.Join(t.TempDir(), "remote.git")
+	remoteRepo, err := PlainInit(remote, true)
+	require.NoError(t, err)
+	require.NoError(t, remoteRepo.Close())
+
+	refs := []plumbing.ReferenceName{
+		plumbing.NewBranchReferenceName("no-such-branch"),
+		plumbing.NewTagReferenceName("no-such-tag"),
+	}
+	for _, ref := range refs {
+		for _, singleBranch := range []bool{false, true} {
+			for _, allowEmpty := range []bool{false, true} {
+				name := fmt.Sprintf("%s/SingleBranch=%t/AllowEmptyRepo=%t", ref, singleBranch, allowEmpty)
+				t.Run(name, func(t *testing.T) {
+					t.Parallel()
+					dest := filepath.Join(t.TempDir(), "clone")
+					cloned, err := PlainCloneContext(context.Background(), dest, &CloneOptions{
+						URL:            remote,
+						ReferenceName:  ref,
+						SingleBranch:   singleBranch,
+						AllowEmptyRepo: allowEmpty,
+					})
+					if cloned != nil {
+						t.Cleanup(func() { _ = cloned.Close() })
+					}
+					require.ErrorIs(t, err, ErrRemoteRefNotFound)
+					assert.NotErrorIs(t, err, transport.ErrEmptyRemoteRepository)
+					assert.NoDirExists(t, dest)
+				})
+			}
+		}
+	}
+}
+
+func TestCloneContext_EmptyRemoteNamedRefIsNotFoundPerProtocol(t *testing.T) {
+	t.Parallel()
+
+	remote := filepath.Join(t.TempDir(), "remote.git")
+	remoteRepo, err := PlainInit(remote, true)
+	require.NoError(t, err)
+	require.NoError(t, remoteRepo.Close())
+
+	for _, version := range []protocol.Version{protocol.V0, protocol.V2} {
+		for _, singleBranch := range []bool{false, true} {
+			name := fmt.Sprintf("protocol=%s/SingleBranch=%t", version, singleBranch)
+			t.Run(name, func(t *testing.T) {
+				t.Parallel()
+				st := memory.NewStorage()
+				cfg, err := st.Config()
+				require.NoError(t, err)
+				cfg.Protocol.Version = version
+				require.NoError(t, st.SetConfig(cfg))
+
+				_, err = CloneContext(context.Background(), st, nil, &CloneOptions{
+					URL:           remote,
+					ReferenceName: plumbing.NewBranchReferenceName("no-such-branch"),
+					SingleBranch:  singleBranch,
+				})
+				require.ErrorIs(t, err, ErrRemoteRefNotFound)
+				assert.NotErrorIs(t, err, transport.ErrEmptyRemoteRepository)
+			})
+		}
+	}
+}
+
 // TestPlainCloneContext_EmptyRemoteDoesNotCleanup verifies that cloning an
 // empty remote repository with AllowEmptyRepo does not remove the directory.
 func TestPlainCloneContext_EmptyRemoteDoesNotCleanup(t *testing.T) {
@@ -748,16 +822,17 @@ func TestPlainCloneContext_EmptyRemoteDoesNotCleanup(t *testing.T) {
 	assert.Equal(t, "origin", reopenedRemotes[0].Config().Name)
 }
 
-// A single-branch clone of a missing branch narrows ls-refs to HEAD, which
-// the remote still advertises with an object id. That is a missing branch,
-// not an empty remote, so AllowEmptyRepo must not turn it into a success.
+// A single-branch clone of a missing branch leaves HEAD out of ls-refs, so a
+// v2 remote replies with no refs and the transport reports an empty remote.
+// Clone must report a missing ref instead, so AllowEmptyRepo cannot turn it
+// into a success.
 func TestPlainCloneContext_SingleBranchMissingRefIsNotEmpty(t *testing.T) {
 	t.Parallel()
 
 	src := t.TempDir()
 	repo, err := PlainInit(src, false)
 	require.NoError(t, err)
-	defer func() { _ = repo.Close() }()
+	t.Cleanup(func() { _ = repo.Close() })
 	wt, err := repo.Worktree()
 	require.NoError(t, err)
 	require.NoError(t, os.WriteFile(filepath.Join(src, "a.txt"), []byte("hi"), 0o600))
@@ -780,6 +855,88 @@ func TestPlainCloneContext_SingleBranchMissingRefIsNotEmpty(t *testing.T) {
 				t.Cleanup(func() { _ = cloned.Close() })
 			}
 			require.ErrorIs(t, err, ErrRemoteRefNotFound)
+		})
+	}
+}
+
+type refPrefixRecorder struct {
+	transport.Transport
+	prefixes []string
+}
+
+func (r *refPrefixRecorder) Handshake(ctx context.Context, req *transport.Request) (transport.Session, error) {
+	sess, err := r.Transport.Handshake(ctx, req)
+	if err != nil {
+		return nil, err
+	}
+	return &refPrefixRecordingSession{Session: sess, r: r}, nil
+}
+
+type refPrefixRecordingSession struct {
+	transport.Session
+	r *refPrefixRecorder
+}
+
+func (s *refPrefixRecordingSession) GetRemoteRefs(ctx context.Context, opts *transport.GetRemoteRefsOptions) (*transport.RemoteRefs, error) {
+	if opts != nil {
+		s.r.prefixes = append(s.r.prefixes, opts.RefPrefixes...)
+	}
+	return s.Session.GetRemoteRefs(ctx, opts)
+}
+
+// git clone asks ls-refs for HEAD unless it is cloning a single named branch
+// or tag, in which case it clears wants_head (builtin/clone.c).
+func TestPlainCloneContext_HeadRefPrefix(t *testing.T) {
+	t.Parallel()
+
+	src := t.TempDir()
+	repo, err := PlainInit(src, false)
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = repo.Close() })
+	wt, err := repo.Worktree()
+	require.NoError(t, err)
+	require.NoError(t, os.WriteFile(filepath.Join(src, "a.txt"), []byte("hi"), 0o600))
+	_, err = wt.Add("a.txt")
+	require.NoError(t, err)
+	sig := &object.Signature{Name: "t", Email: "t@example.com", When: time.Now()}
+	commit, err := wt.Commit("init", &CommitOptions{Author: sig, Committer: sig})
+	require.NoError(t, err)
+	head, err := repo.Head()
+	require.NoError(t, err)
+	_, err = repo.CreateTag("v1", commit, nil)
+	require.NoError(t, err)
+
+	tests := []struct {
+		name         string
+		ref          plumbing.ReferenceName
+		singleBranch bool
+		wantHead     bool
+	}{
+		{name: "default", ref: plumbing.HEAD, wantHead: true},
+		{name: "single branch of HEAD", ref: plumbing.HEAD, singleBranch: true, wantHead: true},
+		{name: "named branch", ref: head.Name(), wantHead: true},
+		{name: "single named branch", ref: head.Name(), singleBranch: true},
+		{name: "single named tag", ref: plumbing.NewTagReferenceName("v1"), singleBranch: true},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			rec := &refPrefixRecorder{Transport: file.NewTransport(file.Options{})}
+			cloned, err := PlainCloneContext(context.Background(), t.TempDir(), &CloneOptions{
+				URL:           "file://" + src,
+				ReferenceName: tt.ref,
+				SingleBranch:  tt.singleBranch,
+				ClientOptions: []client.Option{client.WithTransport("file", rec)},
+			})
+			require.NoError(t, err)
+			t.Cleanup(func() { _ = cloned.Close() })
+
+			require.NotEmpty(t, rec.prefixes)
+			if tt.wantHead {
+				assert.Contains(t, rec.prefixes, "HEAD")
+			} else {
+				assert.NotContains(t, rec.prefixes, "HEAD")
+			}
 		})
 	}
 }

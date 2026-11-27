@@ -66,7 +66,8 @@ type RemoteRefs struct {
 
 // NewRemoteRefs builds a RemoteRefs from a resolved reference list,
 // detecting an unborn HEAD: a symbolic HEAD whose target has no
-// corresponding hash reference in the advertisement.
+// corresponding hash reference in the advertisement. That only holds for a
+// full advertisement, so the v2 transports set Unborn from the server's reply.
 func NewRemoteRefs(refs []*plumbing.Reference) *RemoteRefs {
 	// A detached remote HEAD is advertised as a bare hash. The v0/v1
 	// advertisement resolves it to a symbolic HEAD during decode; the v2
