@@ -65,9 +65,8 @@ func (w *bfsCommitIterator) Next() (*Commit, error) {
 
 		w.seen[c.Hash] = true
 
-		for _, h := range c.ParentHashes {
-			err := w.appendHash(c.s, h)
-			if err != nil {
+		for _, h := range c.liveParentHashes() {
+			if err := w.appendHash(c.s, h); err != nil {
 				return nil, err
 			}
 		}
