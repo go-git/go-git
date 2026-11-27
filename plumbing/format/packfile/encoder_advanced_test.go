@@ -116,7 +116,7 @@ func (s *EncoderAdvancedSuite) testEncodeDecode(
 	s.NoError(err)
 
 	w := new(idxfile.Writer)
-	parser := NewParser(NewScanner(f), WithScannerObservers(w), WithObjectFormat(objectFormat))
+	parser := NewParser(f, WithScannerObservers(w), WithObjectFormat(objectFormat))
 
 	_, err = parser.Parse()
 	s.NoError(err)

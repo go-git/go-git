@@ -11,9 +11,9 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
+	packutil "github.com/go-git/go-git/v6/internal/packfile/util"
 	"github.com/go-git/go-git/v6/plumbing"
 	format "github.com/go-git/go-git/v6/plumbing/format/config"
-	packutil "github.com/go-git/go-git/v6/plumbing/format/packfile/util"
 )
 
 func TestDecodeLEB128Overflow(t *testing.T) {
