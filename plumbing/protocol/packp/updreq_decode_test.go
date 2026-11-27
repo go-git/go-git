@@ -2,6 +2,7 @@ package packp
 
 import (
 	"bytes"
+	"fmt"
 	"io"
 	"regexp"
 	"strings"
@@ -35,22 +36,21 @@ func (s *UpdReqDecodeSuite) TestInvalidPktlines() {
 	s.Regexp(regexp.MustCompile("invalid pkt-len found"), r.Decode(input))
 }
 
+// Git gates the shallow branch on a line longer than "shallow ", so a line
+// that is only the prefix is parsed as a command instead.
+// See https://github.com/git/git/blob/1630431f326e15fcde608827b5ff38422528eb59/builtin/receive-pack.c#L2204.
+func (s *UpdReqDecodeSuite) TestShallowPrefixWithoutObjectIDIsACommand() {
+	for _, line := range []string{"shallow", "shallow "} {
+		s.Run(line, func() {
+			payloads := []string{line, ""}
+			s.testDecoderErrorMatches(toPktLines(s.T(), payloads),
+				"^malformed request: invalid command line length: ")
+		})
+	}
+}
+
 func (s *UpdReqDecodeSuite) TestInvalidShadow() {
 	payloads := []string{
-		"shallow",
-		"1ecf0ef2c2dffb796033e5a02219af86ec6584e5 2ecf0ef2c2dffb796033e5a02219af86ec6584e5 myref\x00",
-		"",
-	}
-	s.testDecoderErrorMatches(toPktLines(s.T(), payloads), "^malformed request: invalid shallow line length: expected 48 or 72, got 7$")
-
-	payloads = []string{
-		"shallow ",
-		"1ecf0ef2c2dffb796033e5a02219af86ec6584e5 2ecf0ef2c2dffb796033e5a02219af86ec6584e5 myref\x00",
-		"",
-	}
-	s.testDecoderErrorMatches(toPktLines(s.T(), payloads), "^malformed request: invalid shallow line length: expected 48 or 72, got 8$")
-
-	payloads = []string{
 		"shallow 1ecf0ef2c2dffb796033e5a02219af86ec65",
 		"1ecf0ef2c2dffb796033e5a02219af86ec6584e5 2ecf0ef2c2dffb796033e5a02219af86ec6584e5 myref\x00",
 		"",
@@ -217,12 +217,47 @@ func (s *UpdReqDecodeSuite) TestInvalidCommandInvalidHash() {
 	s.testDecoderErrorMatches(toPktLines(s.T(), payloads), "^malformed request: invalid new object id: invalid hash: .*$")
 }
 
-func (s *UpdReqDecodeSuite) TestInvalidCommandMissingNullDelimiter() {
+// Git only reads capabilities from a line that carries a null byte, and
+// accepts a command line without one.
+// See https://github.com/git/git/blob/1630431f326e15fcde608827b5ff38422528eb59/builtin/receive-pack.c#L2214.
+func (s *UpdReqDecodeSuite) TestCommandWithoutCapabilitiesDelimiter() {
+	hash1 := plumbing.NewHash("1ecf0ef2c2dffb796033e5a02219af86ec6584e5")
+	hash2 := plumbing.NewHash("2ecf0ef2c2dffb796033e5a02219af86ec6584e5")
+
+	expected := &UpdateRequests{}
+	expected.Commands = []*Command{
+		{Name: plumbing.ReferenceName("myref"), Old: hash1, New: hash2},
+	}
+
 	payloads := []string{
 		"1ecf0ef2c2dffb796033e5a02219af86ec6584e5 2ecf0ef2c2dffb796033e5a02219af86ec6584e5 myref",
 		"",
 	}
-	s.testDecoderErrorMatches(toPktLines(s.T(), payloads), "capabilities delimiter not found")
+
+	s.testDecodeOkExpected(expected, payloads)
+}
+
+// Capabilities accumulate from every command line carrying a null byte, not
+// just the first one.
+func (s *UpdReqDecodeSuite) TestCapabilitiesFromLaterCommandLine() {
+	hash1 := plumbing.NewHash("1ecf0ef2c2dffb796033e5a02219af86ec6584e5")
+	hash2 := plumbing.NewHash("2ecf0ef2c2dffb796033e5a02219af86ec6584e5")
+
+	expected := &UpdateRequests{}
+	expected.Commands = []*Command{
+		{Name: plumbing.ReferenceName("myref1"), Old: hash1, New: hash2},
+		{Name: plumbing.ReferenceName("myref2"), Old: plumbing.ZeroHash, New: hash2},
+	}
+	expected.Capabilities.Add("report-status")
+	expected.Capabilities.Add("side-band-64k")
+
+	payloads := []string{
+		"1ecf0ef2c2dffb796033e5a02219af86ec6584e5 2ecf0ef2c2dffb796033e5a02219af86ec6584e5 myref1\x00report-status",
+		"0000000000000000000000000000000000000000 2ecf0ef2c2dffb796033e5a02219af86ec6584e5 myref2\x00side-band-64k",
+		"",
+	}
+
+	s.testDecodeOkExpected(expected, payloads)
 }
 
 func (s *UpdReqDecodeSuite) TestInvalidCommandMissingName() {
@@ -424,11 +459,12 @@ func (s *UpdReqDecodeSuite) TestShallowNoOpPushMultipleShallows() {
 	s.testDecodeOkExpected(expected, payloads)
 }
 
-func (s *UpdReqDecodeSuite) TestBareFlushNoShallowsIsMalformed() {
-	payloads := []string{
-		"",
-	}
-	s.testDecoderErrorMatches(toPktLines(s.T(), payloads), "capabilities delimiter not found")
+// A request with no commands is a no-op, as sent by a push with nothing to
+// update. Git's receive-pack skips the rest of the exchange when
+// read_head_info returns no commands.
+// See https://github.com/git/git/blob/1630431f326e15fcde608827b5ff38422528eb59/builtin/receive-pack.c#L2566.
+func (s *UpdReqDecodeSuite) TestBareFlushIsNoOp() {
+	s.testDecodeOkExpected(&UpdateRequests{}, []string{""})
 }
 
 func (s *UpdReqDecodeSuite) TestMultipleShallowLines() {
@@ -478,6 +514,132 @@ func (s *UpdReqDecodeSuite) TestMultipleShallowLines() {
 	}
 
 	s.testDecodeOkExpected(expected, payloads)
+}
+
+func (s *UpdReqDecodeSuite) TestShallowAfterFirstCommand() {
+	hash1 := plumbing.NewHash("1ecf0ef2c2dffb796033e5a02219af86ec6584e5")
+	hash2 := plumbing.NewHash("2ecf0ef2c2dffb796033e5a02219af86ec6584e5")
+
+	expected := &UpdateRequests{}
+	expected.Commands = []*Command{
+		{Name: plumbing.ReferenceName("myref1"), Old: hash1, New: hash2},
+	}
+	expected.Capabilities.Add("shallow")
+	expected.Shallows = []plumbing.Hash{hash1}
+
+	payloads := []string{
+		"1ecf0ef2c2dffb796033e5a02219af86ec6584e5 2ecf0ef2c2dffb796033e5a02219af86ec6584e5 myref1\x00shallow",
+		"shallow 1ecf0ef2c2dffb796033e5a02219af86ec6584e5\n",
+		"",
+	}
+
+	s.testDecodeOkExpected(expected, payloads)
+}
+
+func (s *UpdReqDecodeSuite) TestShallowBetweenCommands() {
+	hash1 := plumbing.NewHash("1ecf0ef2c2dffb796033e5a02219af86ec6584e5")
+	hash2 := plumbing.NewHash("2ecf0ef2c2dffb796033e5a02219af86ec6584e5")
+
+	expected := &UpdateRequests{}
+	expected.Commands = []*Command{
+		{Name: plumbing.ReferenceName("myref1"), Old: hash1, New: hash2},
+		{Name: plumbing.ReferenceName("myref2"), Old: plumbing.ZeroHash, New: hash2},
+	}
+	expected.Capabilities.Add("report-status")
+	expected.Shallows = []plumbing.Hash{hash1}
+
+	payloads := []string{
+		"1ecf0ef2c2dffb796033e5a02219af86ec6584e5 2ecf0ef2c2dffb796033e5a02219af86ec6584e5 myref1\x00report-status",
+		"shallow 1ecf0ef2c2dffb796033e5a02219af86ec6584e5",
+		"0000000000000000000000000000000000000000 2ecf0ef2c2dffb796033e5a02219af86ec6584e5 myref2",
+		"",
+	}
+
+	s.testDecodeOkExpected(expected, payloads)
+}
+
+func (s *UpdReqDecodeSuite) TestShallowBeforeFlush() {
+	hash1 := plumbing.NewHash("1ecf0ef2c2dffb796033e5a02219af86ec6584e5")
+	hash2 := plumbing.NewHash("2ecf0ef2c2dffb796033e5a02219af86ec6584e5")
+
+	expected := &UpdateRequests{}
+	expected.Commands = []*Command{
+		{Name: plumbing.ReferenceName("myref1"), Old: hash1, New: hash2},
+		{Name: plumbing.ReferenceName("myref2"), Old: plumbing.ZeroHash, New: hash2},
+	}
+	expected.Capabilities.Add("shallow")
+	expected.Shallows = []plumbing.Hash{hash1, hash2}
+
+	payloads := []string{
+		"shallow 1ecf0ef2c2dffb796033e5a02219af86ec6584e5",
+		"1ecf0ef2c2dffb796033e5a02219af86ec6584e5 2ecf0ef2c2dffb796033e5a02219af86ec6584e5 myref1\x00shallow",
+		"0000000000000000000000000000000000000000 2ecf0ef2c2dffb796033e5a02219af86ec6584e5 myref2",
+		"shallow 2ecf0ef2c2dffb796033e5a02219af86ec6584e5",
+		"",
+	}
+
+	s.testDecodeOkExpected(expected, payloads)
+}
+
+func (s *UpdReqDecodeSuite) TestInvalidShallowAfterCommand() {
+	payloads := []string{
+		"1ecf0ef2c2dffb796033e5a02219af86ec6584e5 2ecf0ef2c2dffb796033e5a02219af86ec6584e5 myref\x00",
+		"shallow 1ecf0ef2c2dffb796033e5a02219af86ec6584eu",
+		"",
+	}
+	s.testDecoderErrorMatches(toPktLines(s.T(), payloads), "^malformed request: invalid shallow object id: invalid hash: .*")
+
+	payloads = []string{
+		"1ecf0ef2c2dffb796033e5a02219af86ec6584e5 2ecf0ef2c2dffb796033e5a02219af86ec6584e5 myref\x00",
+		"shallow 1ecf0ef2c2dffb796033e5a02219af86ec65",
+		"",
+	}
+	s.testDecoderErrorMatches(toPktLines(s.T(), payloads), "^malformed request: invalid shallow line length: expected 48 or 72, got 44$")
+}
+
+func (s *UpdReqDecodeSuite) TestCapabilitiesRepeatedOnEveryLineAreRecordedOnce() {
+	payloads := []string{
+		"1ecf0ef2c2dffb796033e5a02219af86ec6584e5 2ecf0ef2c2dffb796033e5a02219af86ec6584e5 myref1\x00agent=first",
+		"1ecf0ef2c2dffb796033e5a02219af86ec6584e5 2ecf0ef2c2dffb796033e5a02219af86ec6584e5 myref2\x00agent=second",
+		"",
+	}
+
+	req := s.testDecodeOK(payloads)
+
+	s.Equal([]string{"agent"}, req.Capabilities.All())
+	s.Equal([]string{"first"}, req.Capabilities.Get("agent"))
+}
+
+// A client that declares capabilities on every command line must not be able
+// to make the server hold more than it sends: Git only sets fixed flags there.
+func (s *UpdReqDecodeSuite) TestTooManyCapabilities() {
+	payloads := make([]string, 0, maxCapabilities+2)
+	for i := range maxCapabilities + 1 {
+		payloads = append(payloads, fmt.Sprintf(
+			"1ecf0ef2c2dffb796033e5a02219af86ec6584e5 2ecf0ef2c2dffb796033e5a02219af86ec6584e5 myref\x00cap%d", i,
+		))
+	}
+	payloads = append(payloads, "")
+
+	s.testDecoderErrorMatches(toPktLines(s.T(), payloads), fmt.Sprintf(
+		"^malformed request: too many capabilities: limit %d$", maxCapabilities,
+	))
+}
+
+func (s *UpdReqDecodeSuite) TestTooManyCapabilityValues() {
+	var caps strings.Builder
+	for range maxCapabilityValues + 1 {
+		caps.WriteString("agent=x ")
+	}
+
+	payloads := []string{
+		"1ecf0ef2c2dffb796033e5a02219af86ec6584e5 2ecf0ef2c2dffb796033e5a02219af86ec6584e5 myref\x00" + caps.String(),
+		"",
+	}
+
+	s.testDecoderErrorMatches(toPktLines(s.T(), payloads), fmt.Sprintf(
+		"^malformed request: too many values for capability \"agent\": limit %d$", maxCapabilityValues,
+	))
 }
 
 func (s *UpdReqDecodeSuite) testDecodeOkExpected(expected *UpdateRequests, payloads []string) {
