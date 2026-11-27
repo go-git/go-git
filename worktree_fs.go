@@ -220,8 +220,7 @@ var errLeadingSymlink = errors.New("leading component is a symlink")
 // Tree paths have separate checks: FindEntry validates lookup paths,
 // TreeEntryFile validates file names, and TreeWalker.Next validates entry names
 // unless its internal skipPathValidation flag is set. Tree.Validate checks
-// names when explicitly called. CherryPick reaches the object API checks
-// through its merge operations. Submodule.Repository validates paths from
+// names when explicitly called. Submodule.Repository validates paths from
 // .gitmodules, and index.Index.Add rejects unsafe names before tree creation.
 //
 // validWritePath and validReadPath also check for leading symlinks on disk;

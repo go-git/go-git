@@ -62,7 +62,7 @@ compatibility status with go-git.
 | Feature       | Sub-feature | Status | Notes                                                | Examples |
 | ------------- | ----------- | ------ | ---------------------------------------------------- | -------- |
 | `apply`       |             | ❌     |                                                      |          |
-| `cherry-pick` |             | ⚠️ (partial) | It supports default merge strategy `--strategy=ort` and underlying auto-conflict resolve strategy options `--strategy-option` which are `theirs` and `ours`.|          |
+| `cherry-pick` |             | ❌     | Removed in v6. Returns once a three-way merge exists. |          |
 | `diff`        |             | ✅     | Patch object with UnifiedDiff output representation. |          |
 | `rebase`      |             | ❌     |                                                      |          |
 | `revert`      |             | ❌     |                                                      |          |
