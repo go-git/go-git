@@ -48,10 +48,19 @@ func readChain(r io.Reader, o options, maxLines int) ([]string, error) {
 	for maxLines < 0 || len(chain) < maxLines {
 		line, err := bufRd.ReadSlice('\n')
 		if err != nil {
-			if err == io.EOF {
+			if err != io.EOF {
+				return chain, err
+			}
+			// bufio returns the bytes of a final line that has no newline with
+			// io.EOF. A remainder shorter than one whole record, a hash and its
+			// newline, is ignored, as Git ignores it by reading only as many
+			// lines as the file has room for. One that is a whole record long
+			// is not a remainder but an unterminated record, so it is malformed
+			// rather than silently dropped.
+			if len(line) < o.objectFormat.HexSize()+1 {
 				break
 			}
-			return chain, err
+			return chain, ErrMalformedCommitGraphFile
 		}
 
 		hashStr := string(line[:len(line)-1])

@@ -268,6 +268,27 @@ func encodeTestGraph(t *testing.T) []byte {
 	return buf.Bytes()
 }
 
+// TestOpenChainFileRejectsUnterminatedRecord covers a trailing line without its
+// newline that is a whole record long: it used to be dropped like a shorter
+// remainder, so a malformed chain passed validation.
+func TestOpenChainFileRejectsUnterminatedRecord(t *testing.T) {
+	t.Parallel()
+	first := strings.Repeat("a", 40)
+	for _, tc := range []struct {
+		name string
+		data string
+	}{
+		{"non-hex", first + "\n" + strings.Repeat("z", 41)},
+		{"hash plus garbage", first + "\n" + strings.Repeat("b", 40) + "z"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			_, err := commitgraph.OpenChainFile(strings.NewReader(tc.data))
+			require.ErrorIs(t, err, commitgraph.ErrMalformedCommitGraphFile)
+		})
+	}
+}
+
 func TestOpenChainFileIgnoresUnterminatedEntry(t *testing.T) {
 	t.Parallel()
 	first := strings.Repeat("a", 40)
@@ -438,6 +459,7 @@ func TestOpenChainIndexTrailingContent(t *testing.T) {
 		{name: "partial line", trailer: "abc", complete: true},
 		{name: "short line", trailer: "abc\n", complete: true},
 		{name: "entry-length line", trailer: strings.Repeat("x", 40) + "\n", complete: false},
+		{name: "unterminated entry-length line", trailer: strings.Repeat("x", 41), complete: false},
 	}
 
 	for _, tc := range tests {
