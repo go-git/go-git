@@ -1,7 +1,6 @@
 package packfile_test
 
 import (
-	"crypto"
 	"io"
 	"math"
 	"testing"
@@ -252,13 +251,6 @@ func TestSize(t *testing.T) {
 	})
 }
 
-func objectFormatHash(format string) crypto.Hash {
-	if format == "sha256" {
-		return crypto.SHA256
-	}
-	return crypto.SHA1
-}
-
 func getIndexFromFixture(t testing.TB, f *fixtures.Fixture) idxfile.Index {
 	t.Helper()
 
@@ -266,9 +258,9 @@ func getIndexFromFixture(t testing.TB, f *fixtures.Fixture) idxfile.Index {
 	require.NoError(t, err)
 	defer idxFile.Close()
 
-	h := objectFormatHash(f.ObjectFormat)
-	idx := idxfile.NewMemoryIndex(h.Size())
-	require.NoError(t, idxfile.NewDecoder(idxFile, hash.New(h)).Decode(idx))
+	format := hash.ObjectFormat(f.ObjectFormat)
+	idx := idxfile.NewMemoryIndex(format)
+	require.NoError(t, idxfile.NewDecoder(idxFile).Decode(idx))
 	return idx
 }
 

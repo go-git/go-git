@@ -2,10 +2,8 @@ package dotgit
 
 import (
 	"bytes"
-	"crypto"
 	"errors"
 	"fmt"
-	"hash"
 	"io"
 	"os"
 	"sync"
@@ -19,7 +17,6 @@ import (
 	"github.com/go-git/go-git/v6/plumbing/format/objfile"
 	"github.com/go-git/go-git/v6/plumbing/format/packfile"
 	"github.com/go-git/go-git/v6/plumbing/format/revfile"
-	githash "github.com/go-git/go-git/v6/plumbing/hash"
 	"github.com/go-git/go-git/v6/plumbing/storer"
 	"github.com/go-git/go-git/v6/utils/ioutil"
 	"github.com/go-git/go-git/v6/utils/trace"
@@ -28,6 +25,10 @@ import (
 var _ storer.PackReader = (*PackWriter)(nil)
 
 var errReadPackCalled = errors.New("dotgit: ReadPack already called")
+
+// errObjectHeaderNotWritten is returned when an [ObjectWriter] is closed
+// without a header having been written, so it holds no object to save.
+var errObjectHeaderNotWritten = errors.New("dotgit: object closed before its header was written")
 
 // A PackWriter writes a packfile to a temporary file, building its index as
 // the data arrives through [PackWriter.Write] or [PackWriter.ReadPack].
@@ -203,11 +204,6 @@ func (w *PackWriter) clean() error {
 func (w *PackWriter) save() (err error) {
 	base := w.fs.Join(objectsPath, packPath, fmt.Sprintf("pack-%s", w.checksum))
 
-	h := githash.New(crypto.SHA1)
-	if w.checksum.Size() == crypto.SHA256.Size() {
-		h = githash.New(crypto.SHA256)
-	}
-
 	temps := map[string]struct{}{w.fw.Name(): {}}
 	defer func() {
 		if err == nil {
@@ -343,7 +339,7 @@ func (w *PackWriter) save() (err error) {
 	}
 
 	idxPath := base + ".idx"
-	idxTemp, err := stage("tmp_idx_", func(f io.Writer) error { return w.encodeIdx(f, h) })
+	idxTemp, err := stage("tmp_idx_", func(f io.Writer) error { return w.encodeIdx(f) })
 	if err != nil {
 		return err
 	}
@@ -351,7 +347,7 @@ func (w *PackWriter) save() (err error) {
 	var revTemp string
 	revPath := base + ".rev"
 	if w.writeRev {
-		revTemp, err = stage("tmp_rev_", func(f io.Writer) error { return w.encodeRev(f, h) })
+		revTemp, err = stage("tmp_rev_", func(f io.Writer) error { return w.encodeRev(f) })
 		if err != nil {
 			return err
 		}
@@ -513,22 +509,22 @@ func fileExists(fs billy.Filesystem, path string) (bool, error) {
 	return true, nil
 }
 
-func (w *PackWriter) encodeIdx(writer io.Writer, h hash.Hash) error {
+func (w *PackWriter) encodeIdx(writer io.Writer) error {
 	idx, err := w.writer.Index()
 	if err != nil {
 		return err
 	}
 
-	return idxfile.Encode(writer, h, idx)
+	return idxfile.Encode(writer, idx)
 }
 
-func (w *PackWriter) encodeRev(writer io.Writer, h hash.Hash) error {
+func (w *PackWriter) encodeRev(writer io.Writer) error {
 	idx, err := w.writer.Index()
 	if err != nil {
 		return err
 	}
 
-	return revfile.Encode(writer, h, idx)
+	return revfile.Encode(writer, idx)
 }
 
 // syncedReader lets a reader trail a writer on the same file: Read
@@ -709,6 +705,14 @@ func (w *ObjectWriter) Close() error {
 
 func (w *ObjectWriter) save() error {
 	h := w.Hash()
+	if h.IsZero() {
+		// WriteHeader failed or was never called, so there is no
+		// object to save.
+		if err := w.fs.Remove(w.f.Name()); err != nil {
+			return err
+		}
+		return errObjectHeaderNotWritten
+	}
 	hex := h.String()
 	file := w.fs.Join(objectsPath, hex[0:2], hex[2:h.HexSize()])
 

@@ -28,6 +28,7 @@ import (
 	"github.com/go-git/go-git/v6/plumbing/format/config"
 	"github.com/go-git/go-git/v6/plumbing/format/idxfile"
 	"github.com/go-git/go-git/v6/plumbing/format/packfile"
+	"github.com/go-git/go-git/v6/plumbing/hash"
 )
 
 func BenchmarkNewObjectPack(b *testing.B) {
@@ -536,6 +537,26 @@ func TestObjectWriterPermissions(t *testing.T) {
 			assert.True(t, ro, "file %q is not read-only", path)
 		})
 	}
+}
+
+func TestObjectWriterCloseAfterFailedHeader(t *testing.T) {
+	t.Parallel()
+
+	fs := memfs.New()
+	dot := NewWithOptions(fs, Options{ObjectFormat: config.ObjectFormat("sha512")})
+	require.NoError(t, dot.Initialize())
+
+	w, err := dot.NewObject()
+	require.NoError(t, err)
+
+	err = w.WriteHeader(plumbing.BlobObject, 0)
+	require.ErrorIs(t, err, hash.ErrUnsupportedHashFunction)
+
+	require.ErrorIs(t, w.Close(), errObjectHeaderNotWritten)
+
+	tmp, err := fs.ReadDir(fs.Join("objects", "pack"))
+	require.NoError(t, err)
+	assert.Empty(t, tmp)
 }
 
 // TestSyncedReaderNoLostWakeup checks that a reader that has caught up with

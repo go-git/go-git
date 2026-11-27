@@ -6,17 +6,17 @@ import (
 	"encoding/hex"
 	"io"
 
-	format "github.com/go-git/go-git/v6/plumbing/format/config"
+	githash "github.com/go-git/go-git/v6/plumbing/hash"
 )
 
-var empty = make([]byte, format.SHA256Size)
+var empty = make([]byte, githash.SHA256Size)
 
 // FromHex parses a hexadecimal string and returns an ObjectID
 // and a boolean confirming whether the operation was successful.
 // The object format is inferred from the length of the input, which
 // must be exactly that of a SHA-1 or a SHA-256 id.
 func FromHex(in string) (ObjectID, bool) {
-	if len(in) != format.SHA1HexSize && len(in) != format.SHA256HexSize {
+	if len(in) != githash.SHA1HexSize && len(in) != githash.SHA256HexSize {
 		return ObjectID{}, false
 	}
 	return fromHexLax(in)
@@ -29,8 +29,8 @@ func FromHex(in string) (ObjectID, bool) {
 func fromHexLax(in string) (ObjectID, bool) {
 	var id ObjectID
 
-	if len(in) == format.SHA256HexSize {
-		id.format = format.SHA256
+	if len(in) == githash.SHA256HexSize {
+		id.format = githash.SHA256
 	}
 
 	out, err := hex.DecodeString(in)
@@ -42,8 +42,8 @@ func fromHexLax(in string) (ObjectID, bool) {
 	return id, true
 }
 
-// FromBytes creates an ObjectID based off its hex representation in bytes.
-// The object format is inferred from the length of the input.
+// FromBytes creates an ObjectID from its raw bytes. The object format is
+// inferred from the length of the input.
 //
 // If the size of [in] does not match the supported object formats,
 // an empty ObjectID will be returned.
@@ -51,11 +51,11 @@ func FromBytes(in []byte) (ObjectID, bool) {
 	var id ObjectID
 
 	switch len(in) {
-	case format.SHA1Size:
-		id.format = format.UnsetObjectFormat
+	case githash.SHA1Size:
+		id.format = githash.UnsetObjectFormat
 
-	case format.SHA256Size:
-		id.format = format.SHA256
+	case githash.SHA256Size:
+		id.format = githash.SHA256
 
 	default:
 		return id, false
@@ -67,15 +67,16 @@ func FromBytes(in []byte) (ObjectID, bool) {
 
 // ZeroID returns the zero ObjectID for the object format [f]. Unknown
 // formats yield the SHA-1 zero, which is [ZeroHash].
-func ZeroID(f format.ObjectFormat) ObjectID {
-	if f == format.SHA256 {
-		return ObjectID{format: format.SHA256}
+func ZeroID(f githash.ObjectFormat) ObjectID {
+	if f == githash.SHA256 {
+		return ObjectID{format: githash.SHA256}
 	}
 	return ObjectID{}
 }
 
-// ObjectID represents the ID of a Git object. The object data is kept
-// in its hexadecimal form.
+// ObjectID represents the ID of a Git object, which is the hash of the
+// object in the repository's object format. It holds the raw bytes of
+// the hash. [ObjectID.String] returns its hexadecimal form.
 //
 // Every id has exactly one representation regardless of how it was
 // produced (parsed, hashed, decoded or read), so ==, [ObjectID.Equal]
@@ -85,17 +86,17 @@ func ZeroID(f format.ObjectFormat) ObjectID {
 // Ids of different formats are never equal, including their zero ids.
 // Use [ObjectID.IsZero] to test for a zero id of any format.
 type ObjectID struct {
-	hash   [format.SHA256Size]byte
-	format format.ObjectFormat
+	hash   [githash.SHA256Size]byte
+	format githash.ObjectFormat
 }
 
 // Format returns the object format of the ObjectID. Ids that carry no
 // explicit format are SHA-1.
-func (s ObjectID) Format() format.ObjectFormat {
-	if s.format == format.SHA256 {
-		return format.SHA256
+func (s ObjectID) Format() githash.ObjectFormat {
+	if s.format == githash.SHA256 {
+		return githash.SHA256
 	}
-	return format.SHA1
+	return githash.SHA1
 }
 
 // HexSize returns the size for the hex representation of the current
@@ -120,12 +121,9 @@ func (s ObjectID) Equal(in ObjectID) bool {
 	return s == in
 }
 
-// Bytes returns the slice of bytes representing the hash in hexadecimal.
+// Bytes returns the raw bytes of the ObjectID. Their length is the size
+// of the id's object format.
 func (s ObjectID) Bytes() []byte {
-	if len(s.hash) == 0 {
-		v := make([]byte, s.Size())
-		return v
-	}
 	return s.hash[:s.Size()]
 }
 
@@ -147,9 +145,9 @@ func (s ObjectID) String() string {
 	return hex.EncodeToString(val)
 }
 
-// Write writes the hexadecimal representation of the ObjectID from [in]
-// directly into the current object. At most the ObjectID's current size
-// is written, and any bytes in [in] past it are ignored.
+// Write copies the raw bytes of an id from [in] into the ObjectID. At
+// most the ObjectID's current size is written, and any bytes in [in]
+// past it are ignored.
 func (s *ObjectID) Write(in []byte) (int, error) {
 	n := copy(s.hash[:s.Size()], in)
 	return n, nil
@@ -167,8 +165,7 @@ func (s *ObjectID) ReadFrom(r io.Reader) (int64, error) {
 	return int64(n), nil
 }
 
-// WriteTo writes the Big Endian representation of the ObjectID
-// into the writer [w].
+// WriteTo writes the raw bytes of the ObjectID into the writer [w].
 func (s *ObjectID) WriteTo(w io.Writer) (int64, error) {
 	err := binary.Write(w, binary.BigEndian, s.hash[:s.Size()])
 	if err != nil {
@@ -184,10 +181,10 @@ func (s *ObjectID) WriteTo(w io.Writer) (int64, error) {
 // This enable complete reuse of this object without needing
 // to create a new instance of ObjectID.
 func (s *ObjectID) ResetBySize(idSize int) {
-	if idSize == format.SHA256Size {
-		s.format = format.SHA256
+	if idSize == githash.SHA256Size {
+		s.format = githash.SHA256
 	} else {
-		s.format = format.UnsetObjectFormat
+		s.format = githash.UnsetObjectFormat
 	}
 	clear(s.hash[:])
 }

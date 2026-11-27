@@ -1,10 +1,30 @@
 package index
 
+import "github.com/go-git/go-git/v6/plumbing/hash"
+
 // Option configures an Encoder or Decoder.
 type Option func(*options)
 
 type options struct {
-	skipHash bool
+	skipHash     bool
+	objectFormat hash.ObjectFormat
+}
+
+func newOptions(opts []Option) options {
+	var o options
+	for _, opt := range opts {
+		opt(&o)
+	}
+	return o
+}
+
+// WithObjectFormat sets the object format of the index, which
+// determines the size of its ids and the hash of its checksum. It
+// defaults to SHA-1.
+func WithObjectFormat(f hash.ObjectFormat) Option {
+	return func(o *options) {
+		o.objectFormat = f
+	}
 }
 
 // WithSkipHash disables checksum computation when encoding and checksum

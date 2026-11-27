@@ -1542,7 +1542,7 @@ func writeRawPack(t *testing.T, fs billy.Filesystem, entries ...rawPackEntry) {
 	index, err := idx.Index()
 	require.NoError(t, err)
 	var idxFile bytes.Buffer
-	require.NoError(t, idxfile.Encode(&idxFile, sha1.New(), index))
+	require.NoError(t, idxfile.Encode(&idxFile, index))
 
 	name := fmt.Sprintf("objects/pack/pack-%s", checksum)
 	require.NoError(t, util.WriteFile(fs, name+".pack", pack.Bytes(), 0o644))

@@ -17,7 +17,6 @@ import (
 
 	"github.com/go-git/go-git/v6/plumbing"
 	formatcfg "github.com/go-git/go-git/v6/plumbing/format/config"
-	"github.com/go-git/go-git/v6/plumbing/hash"
 	"github.com/go-git/go-git/v6/x/fdpool"
 )
 
@@ -384,7 +383,7 @@ func TestMemoryIndexOffset64OutOfRange(t *testing.T) {
 	idxBytes, h := buildOOBOffset64Idx()
 
 	idx := new(MemoryIndex)
-	d := NewDecoder(FromBytes(idxBytes), hash.New(crypto.SHA1))
+	d := NewDecoder(FromBytes(idxBytes))
 	require.NoError(t, d.Decode(idx))
 
 	_, err := idx.FindOffset(h)
@@ -450,7 +449,7 @@ func TestLazyIndexCloseIdleDescriptors(t *testing.T) {
 	require.NoError(t, err)
 
 	memIdx := new(MemoryIndex)
-	d := NewDecoder(FromBytes(idxBytes), hash.New(crypto.SHA1))
+	d := NewDecoder(FromBytes(idxBytes))
 	require.NoError(t, d.Decode(memIdx))
 
 	revBytes, err := buildTestRevFile(memIdx)
@@ -654,7 +653,7 @@ func TestLazyIndex_EntriesWithPrefix_MultiByte(t *testing.T) {
 	require.NoError(t, err)
 
 	var idxBuf bytes.Buffer
-	require.NoError(t, Encode(&idxBuf, hash.New(crypto.SHA1), memIdx))
+	require.NoError(t, Encode(&idxBuf, memIdx))
 	idxBytes := idxBuf.Bytes()
 
 	revBytes, err := buildTestRevFile(memIdx)
@@ -731,7 +730,7 @@ func fixtureLazyIndex(withRev bool) (*LazyIndex, error) {
 	}
 
 	memIdx := new(MemoryIndex)
-	d := NewDecoder(FromBytes(idxBytes), hash.New(crypto.SHA1))
+	d := NewDecoder(FromBytes(idxBytes))
 	if err := d.Decode(memIdx); err != nil {
 		return nil, err
 	}
@@ -811,7 +810,7 @@ func TestLazyIndex_WithPool_EvictionAndReopen(t *testing.T) {
 	require.NoError(t, err)
 
 	memIdx := new(MemoryIndex)
-	d := NewDecoder(FromBytes(idxBytes), hash.New(crypto.SHA1))
+	d := NewDecoder(FromBytes(idxBytes))
 	require.NoError(t, d.Decode(memIdx))
 
 	revBytes, err := buildTestRevFile(memIdx)

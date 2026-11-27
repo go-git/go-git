@@ -8,6 +8,7 @@ import (
 	"github.com/go-git/go-billy/v6"
 
 	"github.com/go-git/go-git/v6/config"
+	"github.com/go-git/go-git/v6/internal/hashutil"
 	"github.com/go-git/go-git/v6/plumbing"
 	"github.com/go-git/go-git/v6/plumbing/cache"
 	formatcfg "github.com/go-git/go-git/v6/plumbing/format/config"
@@ -25,9 +26,8 @@ const defaultPoolCapacity = 256
 // standard git format (this is, the .git directory). Zero values of this type
 // are not safe to use, see the NewStorage function below.
 type Storage struct {
-	fs     billy.Filesystem
-	dir    *dotgit.DotGit
-	hasher plumbing.Hasher
+	fs  billy.Filesystem
+	dir *dotgit.DotGit
 
 	*ObjectStorage
 	ReferenceStorage
@@ -70,6 +70,15 @@ type Options struct {
 	// This value is completely ignored when the storage is pointing to an
 	// existing dotgit. In such cases the repository config will define the
 	// ObjectFormat - even if implicitly (e.g. SHA1).
+	//
+	// The constructors cannot return an error, so they do not reject a
+	// format that is neither SHA-1 nor SHA-256, whether it comes from
+	// this field or from the repository config. Objects are then hashed
+	// with SHA-1. Opening an existing repository whose config names
+	// such a format fails when its extensions are validated, but a new
+	// repository initialised on the storage is not rejected until it is
+	// opened again. Use [Storage.SetObjectFormat] to get an error for an
+	// unsupported format.
 	ObjectFormat formatcfg.ObjectFormat
 
 	// UseInMemoryIdx loads .idx files fully into memory (MemoryIndex) instead
@@ -164,7 +173,9 @@ func NewStorageWithOptions(fs billy.Filesystem, c cache.Object, ops Options) *St
 		_ = f.Close()
 	}
 
-	hasher := plumbing.NewHasher(ops.ObjectFormat, plumbing.AnyObject, 0)
+	// Objects, packs and the index are hashed in a supported format,
+	// as documented on Options.ObjectFormat.
+	hashFormat := supportedObjectFormat(ops.ObjectFormat)
 
 	// Construct a per-Storage FD pool at the package default
 	// capacity unless the caller injected one. Pass a non-positive-
@@ -177,7 +188,7 @@ func NewStorageWithOptions(fs billy.Filesystem, c cache.Object, ops Options) *St
 	dirOps := dotgit.Options{
 		ExclusiveAccess:   ops.ExclusiveAccess,
 		AlternatesFS:      ops.AlternatesFS,
-		ObjectFormat:      ops.ObjectFormat,
+		ObjectFormat:      hashFormat,
 		ReadReverseIndex:  readRevIdx,
 		WriteReverseIndex: writeRevIdx,
 		Pool:              pool,
@@ -193,13 +204,12 @@ func NewStorageWithOptions(fs billy.Filesystem, c cache.Object, ops Options) *St
 	}
 
 	s := &Storage{
-		fs:     fs,
-		dir:    dir,
-		hasher: hasher,
+		fs:  fs,
+		dir: dir,
 
 		ObjectStorage:    NewObjectStorageWithOptions(dir, c, ops),
 		ReferenceStorage: ReferenceStorage{dir: dir},
-		IndexStorage:     IndexStorage{dir: dir, h: hasher.Hash, cache: ops.IndexCache, skipHash: skipHash},
+		IndexStorage:     IndexStorage{dir: dir, objectFormat: hashFormat, cache: ops.IndexCache, skipHash: skipHash},
 		ShallowStorage:   ShallowStorage{dir: dir, objectFormat: ops.ObjectFormat},
 		ConfigStorage:    ConfigStorage{dir: dir, objectFormat: ops.ObjectFormat},
 		ModuleStorage:    ModuleStorage{dir: dir, objectFormat: ops.ObjectFormat},
@@ -215,11 +225,17 @@ func NewStorageWithOptions(fs billy.Filesystem, c cache.Object, ops Options) *St
 //
 // If the storage is empty and the new ObjectFormat is the same as the
 // current, this call will be treated as a no-op.
+//
+// [formatcfg.UnsetObjectFormat] is handled as
+// [formatcfg.DefaultObjectFormat]. Any other format that is neither
+// SHA-1 nor SHA-256 returns an error wrapping
+// [github.com/go-git/go-git/v6/plumbing/hash.ErrUnsupportedHashFunction].
 func (s *Storage) SetObjectFormat(of formatcfg.ObjectFormat) error {
-	switch of {
-	case formatcfg.SHA1, formatcfg.SHA256:
-	default:
-		return fmt.Errorf("invalid object format: %s", of)
+	if of == formatcfg.UnsetObjectFormat {
+		of = formatcfg.DefaultObjectFormat
+	}
+	if err := hashutil.Check(of); err != nil {
+		return err
 	}
 
 	// Presently, storage only supports a single object format at a
@@ -236,6 +252,11 @@ func (s *Storage) SetObjectFormat(of formatcfg.ObjectFormat) error {
 	}
 
 	if cfg.Extensions.ObjectFormat != of {
+		oh, err := plumbing.NewObjectHasher(of)
+		if err != nil {
+			return err
+		}
+
 		cfg.Extensions.ObjectFormat = of
 		cfg.Core.RepositoryFormatVersion = formatcfg.Version1
 		err = s.SetConfig(cfg)
@@ -252,9 +273,8 @@ func (s *Storage) SetObjectFormat(of formatcfg.ObjectFormat) error {
 		s.ModuleStorage.objectFormat = of
 		s.ShallowStorage.objectFormat = of
 		s.options.ObjectFormat = of
-		s.oh = plumbing.FromObjectFormat(of)
-		s.hasher = plumbing.NewHasher(of, plumbing.AnyObject, 0)
-		s.h = s.hasher.Hash
+		s.oh = oh
+		s.IndexStorage.objectFormat = of
 	}
 
 	return nil

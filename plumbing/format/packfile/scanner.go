@@ -203,10 +203,12 @@ type Scanner struct {
 func NewScanner(rs io.Reader, opts ...ScannerOption) *Scanner {
 	crc := crc32.NewIEEE()
 	packhash := gogithash.New(crypto.SHA1)
+	// NewHasher cannot fail for SHA-1.
+	hasher, _ := plumbing.NewHasher(format.SHA1, plumbing.AnyObject, 0)
 
 	r := &Scanner{
 		objIndex: -1,
-		hasher:   plumbing.NewHasher(format.SHA1, plumbing.AnyObject, 0),
+		hasher:   hasher,
 		crc:      crc,
 		packhash: packhash,
 		nextFn:   packHeaderSignature,
