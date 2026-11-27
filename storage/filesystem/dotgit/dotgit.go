@@ -478,6 +478,53 @@ func (d *DotGit) Shallow() (billy.File, error) {
 	return f, nil
 }
 
+// ReflogNames lists reflogs, including those without a live reference.
+func (d *DotGit) ReflogNames() ([]plumbing.ReferenceName, error) {
+	var names []plumbing.ReferenceName
+
+	var walk func(string, string) error
+	walk = func(directory, prefix string) error {
+		entries, err := d.fs.ReadDir(directory)
+		if errors.Is(err, os.ErrNotExist) {
+			return nil
+		}
+		if err != nil {
+			return err
+		}
+
+		for _, entry := range entries {
+			relative := path.Join(prefix, entry.Name())
+			location := d.fs.Join(directory, entry.Name())
+
+			if entry.IsDir() {
+				if err := walk(location, relative); err != nil {
+					return err
+				}
+				continue
+			}
+
+			if !entry.Type().IsRegular() {
+				continue
+			}
+
+			name := plumbing.ReferenceName(relative)
+			if validReferenceName(name) != nil {
+				continue
+			}
+
+			names = append(names, name)
+		}
+		return nil
+	}
+
+	if err := walk(logsPath, ""); err != nil {
+		return nil, err
+	}
+
+	slices.Sort(names)
+	return names, nil
+}
+
 // ReflogReader returns a file pointer for reading the reflog for the given reference.
 // Returns nil, nil if the reflog file does not exist.
 func (d *DotGit) ReflogReader(name plumbing.ReferenceName) (billy.File, error) {
