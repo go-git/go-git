@@ -711,57 +711,138 @@ func (r *Repository) SetConfig(cfg *config.Config) error {
 // ConfigScoped returns the repository config, merged with requested scope and
 // lower. For example if, config.GlobalScope is given the local and global config
 // are returned merged in one config value.
+//
+// The [include] and [includeIf] directives of every scope are resolved,
+// with conditions evaluated against this repository rather than the
+// process's working directory.
 func (r *Repository) ConfigScoped(scope config.Scope) (*config.Config, error) {
 	// TODO(mcuadros): v6, add this as ConfigOptions.Scoped
 
-	local, err := r.Storer.Config()
+	cfgs, err := config.LoadWithIncludes(r.includeContext(), func(ctx config.IncludeContext) ([]*config.Config, error) {
+		system, global, local, err := r.scopedConfigs(scope, ctx)
+		return []*config.Config{system, global, local}, err
+	})
 	if err != nil {
 		return nil, err
 	}
 
+	cfg := config.Merge(cfgs[0], cfgs[1], cfgs[2])
+	return &cfg, nil
+}
+
+// scopedConfigs loads every scope up to and including the requested one.
+// Scopes above it are returned empty, so that they merge to nothing.
+func (r *Repository) scopedConfigs(
+	scope config.Scope,
+	ctx config.IncludeContext,
+) (system, global, local *config.Config, err error) {
+	system, global = config.NewConfig(), config.NewConfig()
+
+	local, err = r.localConfig(ctx)
+	if err != nil {
+		return nil, nil, nil, err
+	}
+
 	// LocalScope only needs the repository's own config; no plugin required.
 	if scope <= config.LocalScope {
-		cfg := config.Merge(config.NewConfig(), config.NewConfig(), local)
-		return &cfg, nil
+		return system, global, local, nil
 	}
 
 	// Use Has before Get so the key is not frozen when no plugin is
 	// registered, allowing callers to register one later.
 	if !plugin.Has(plugin.ConfigLoader()) {
-		return nil, errors.New("no config loader registered")
+		return nil, nil, nil, errors.New("no config loader registered")
 	}
 
 	src, err := plugin.Get(plugin.ConfigLoader())
 	if err != nil {
+		return nil, nil, nil, err
+	}
+
+	if scope >= config.SystemScope {
+		if system, err = loadScopedConfig(src, config.SystemScope, ctx); err != nil {
+			return nil, nil, nil, err
+		}
+	}
+
+	if scope >= config.GlobalScope {
+		if global, err = loadScopedConfig(src, config.GlobalScope, ctx); err != nil {
+			return nil, nil, nil, err
+		}
+	}
+
+	return system, global, local, nil
+}
+
+// loadScopedConfig reads one scope from src, preferring the contextual
+// interface so that includeIf conditions are evaluated against this
+// repository.
+func loadScopedConfig(
+	src plugin.ConfigSource,
+	scope config.Scope,
+	ctx config.IncludeContext,
+) (*config.Config, error) {
+	var (
+		storer config.ConfigStorer
+		err    error
+	)
+
+	if cs, ok := src.(plugin.ContextualConfigSource); ok {
+		storer, err = cs.LoadFor(scope, ctx)
+	} else {
+		storer, err = src.Load(scope)
+	}
+	if err != nil {
 		return nil, err
 	}
 
-	system := config.NewConfig()
-	if scope >= config.SystemScope {
-		ss, err := src.Load(config.SystemScope)
-		if err != nil {
-			return nil, err
-		}
-		system, err = ss.Config()
-		if err != nil {
-			return nil, err
-		}
+	return storer.Config()
+}
+
+// localConfig reads the repository's own config with its includes
+// resolved when the storage supports it. Storage that does not simply
+// yields the file as written.
+func (r *Repository) localConfig(ctx config.IncludeContext) (*config.Config, error) {
+	if s, ok := r.Storer.(config.IncludeAwareConfigStorer); ok {
+		return s.ConfigWithIncludes(ctx)
 	}
 
-	global := config.NewConfig()
-	if scope >= config.GlobalScope {
-		gs, err := src.Load(config.GlobalScope)
-		if err != nil {
-			return nil, err
-		}
-		global, err = gs.Config()
-		if err != nil {
-			return nil, err
-		}
+	return r.Storer.Config()
+}
+
+// includeContext describes this repository for the purpose of evaluating
+// includeIf conditions.
+func (r *Repository) includeContext() config.IncludeContext {
+	ctx := config.IncludeContext{Branch: r.currentBranch()}
+
+	type fsBased interface {
+		Filesystem() billy.Filesystem
 	}
 
-	cfg := config.Merge(system, global, local)
-	return &cfg, nil
+	if fs, ok := r.Storer.(fsBased); ok {
+		ctx.GitDir = fs.Filesystem().Root()
+	}
+	if r.wt != nil {
+		ctx.WorkTree = r.wt.Root()
+	}
+
+	return ctx
+}
+
+// currentBranch returns the short name of the branch HEAD points at,
+// born or not, or an empty string when HEAD is detached. "onbranch:"
+// conditions are false in that case, which is what git does.
+func (r *Repository) currentBranch() string {
+	ref, err := r.Storer.Reference(plumbing.HEAD)
+	if err != nil || ref.Type() != plumbing.SymbolicReference {
+		return ""
+	}
+
+	if target := ref.Target(); target.IsBranch() {
+		return target.Short()
+	}
+
+	return ""
 }
 
 // Remote return a remote if exists
