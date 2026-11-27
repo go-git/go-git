@@ -415,3 +415,10 @@ func (g *symlinkGuardedFilesystem) Readlink(link string) (string, error) {
 	}
 	return g.Filesystem.Readlink(link)
 }
+
+func (g *symlinkGuardedFilesystem) Stat(filename string) (os.FileInfo, error) {
+	if err := g.guard.validNoLeadingSymlink(filename); err != nil {
+		return nil, fmt.Errorf("stat: %w", err)
+	}
+	return g.Filesystem.Stat(filename)
+}
