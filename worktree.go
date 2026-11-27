@@ -216,19 +216,46 @@ func (w *Worktree) Checkout(opts *CheckoutOptions) error {
 		return err
 	}
 
-	ro := &ResetOptions{
-		Commit:     c,
-		Mode:       MergeReset,
-		SparseDirs: opts.SparseCheckoutDirectories,
-	}
-	if opts.Force {
-		ro.Mode = HardReset
-	} else if opts.Keep {
-		ro.Mode = SoftReset
+	// When HEAD and the target share a tree, switching changes no tracked
+	// file, so the reset and its scan of every worktree file are skipped.
+	// Staged and unstaged changes carry over untouched, as with
+	// `git switch -c`, which skips merge_working_tree for the same reason:
+	// https://github.com/git/git/blob/v2.52.0/builtin/checkout.c#L1214-L1215
+	//
+	// An empty index still goes through the reset, so that an index never
+	// populated, as after a NoCheckout clone, gets the initial checkout
+	// `git checkout <branch>` gives an unborn index:
+	// https://github.com/git/git/blob/v2.52.0/builtin/checkout.c#L780
+	skipReset := false
+	if !opts.Force && !opts.Keep && len(opts.SparseCheckoutDirectories) == 0 {
+		targetCommit, err := w.r.CommitObject(c)
+		if err != nil {
+			return err
+		}
+
+		// Errors are left for the reset to report.
+		sameTree, err := w.canSkipWorktreeUpdate(targetCommit)
+		if err == nil && sameTree {
+			idx, err := w.r.Storer.Index()
+			skipReset = err == nil && len(idx.Entries) > 0
+		}
 	}
 
-	if err := w.reset(ro); err != nil {
-		return err
+	if !skipReset {
+		ro := &ResetOptions{
+			Commit:     c,
+			Mode:       MergeReset,
+			SparseDirs: opts.SparseCheckoutDirectories,
+		}
+		if opts.Force {
+			ro.Mode = HardReset
+		} else if opts.Keep {
+			ro.Mode = SoftReset
+		}
+
+		if err := w.reset(ro); err != nil {
+			return err
+		}
 	}
 
 	// A failed tree read must not switch HEAD or create a branch. Resetting
@@ -343,6 +370,22 @@ func (w *Worktree) setHEADToBranch(branch plumbing.ReferenceName, commit plumbin
 	}
 
 	return w.r.Storer.SetReference(head)
+}
+
+// canSkipWorktreeUpdate reports whether HEAD and targetCommit have the same
+// tree, so that checking out targetCommit changes no tracked file.
+func (w *Worktree) canSkipWorktreeUpdate(targetCommit *object.Commit) (bool, error) {
+	headRef, err := w.r.Head()
+	if err != nil {
+		return false, err
+	}
+
+	currentCommit, err := w.r.CommitObject(headRef.Hash())
+	if err != nil {
+		return false, err
+	}
+
+	return currentCommit.TreeHash == targetCommit.TreeHash, nil
 }
 
 // Reset the worktree to a specified state.
