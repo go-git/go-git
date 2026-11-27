@@ -2046,7 +2046,7 @@ func TestWorktreeOperationsSurviveDotGitDisguises(t *testing.T) {
 								require.Equal(t, "preserved", string(body))
 							}
 						case "Status":
-							status, err := w.Status()
+							status, err := w.StatusWithOptions(StatusOptions{UntrackedFiles: UntrackedFilesAll})
 							require.NoError(t, err)
 							want := Status{
 								"unrelated.txt": &FileStatus{Staging: Untracked, Worktree: Untracked},
@@ -2179,7 +2179,7 @@ func TestWorktreeAPISurvivesUntrackedEdgeNames(t *testing.T) {
 						_, err = fs.Lstat(name)
 						require.ErrorIs(t, err, os.ErrNotExist)
 					case "Status":
-						status, err := w.Status()
+						status, err := w.StatusWithOptions(StatusOptions{UntrackedFiles: UntrackedFilesAll})
 						require.NoError(t, err)
 						require.Contains(t, status, p)
 					case "AddUnrelated":

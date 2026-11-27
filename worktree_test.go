@@ -3145,11 +3145,11 @@ func (s *WorktreeSuite) TestStatusIgnored() {
 
 	status, _ := w.Status()
 	s.Len(status, 3)
-	_, ok := status["another/file"]
+	_, ok := status["another/"]
 	s.True(ok)
-	_, ok = status["vendor/github.com/file"]
+	_, ok = status["vendor/github.com/"]
 	s.True(ok)
-	_, ok = status["vendor/gopkg.in/file"]
+	_, ok = status["vendor/gopkg.in/"]
 	s.True(ok)
 
 	f, _ = fs.Create(".gitignore")
@@ -3163,11 +3163,11 @@ func (s *WorktreeSuite) TestStatusIgnored() {
 	s.Len(status, 4)
 	_, ok = status[".gitignore"]
 	s.True(ok)
-	_, ok = status["another/file"]
+	_, ok = status["another/"]
 	s.True(ok)
 	_, ok = status["vendor/.gitignore"]
 	s.True(ok)
-	_, ok = status["vendor/github.com/file"]
+	_, ok = status["vendor/github.com/"]
 	s.True(ok)
 }
 
@@ -5974,7 +5974,7 @@ func TestStatusAndCleanWithDotGitAliases(t *testing.T) {
 
 				// Status follows Git, which skips .GIT only under
 				// core.ignorecase.
-				status, err := w.Status()
+				status, err := w.StatusWithOptions(StatusOptions{UntrackedFiles: UntrackedFilesAll})
 				require.NoError(t, err)
 				if ignoreCase.IsTrue() {
 					require.Empty(t, status)
@@ -6014,7 +6014,7 @@ func TestStatusAndCleanWithDotGitAliases(t *testing.T) {
 				require.NoError(t, util.WriteFile(fs, untracked, []byte("x"), 0o644))
 				require.NoError(t, util.WriteFile(fs, "z", []byte("x"), 0o644))
 
-				status, err := w.Status()
+				status, err := w.StatusWithOptions(StatusOptions{UntrackedFiles: UntrackedFilesAll})
 				require.NoError(t, err)
 				require.True(t, status.IsUntracked(untracked), "status: %v", status)
 
@@ -6289,8 +6289,9 @@ func TestCleanRefusesRemovalThroughSwappedSymlink(t *testing.T) {
 			require.NoError(t, util.WriteFile(sfs, "/outside/f", []byte("x"), 0o644))
 			require.NoError(t, sfs.MkdirAll("/outside/sub", 0o755))
 
-			// Clean runs Status first, then lists dir once more itself.
-			_, err = w.Status()
+			// Clean runs Status listing every untracked file first, then
+			// lists dir once more itself.
+			_, err = w.StatusWithOptions(StatusOptions{UntrackedFiles: UntrackedFilesAll})
 			require.NoError(t, err)
 			sfs.swapAt = 2*sfs.reads + 1
 
