@@ -10,11 +10,14 @@ import (
 	"os"
 	"path"
 	"path/filepath"
+	"runtime"
 	"slices"
 	"strings"
+	stdsync "sync"
 	"time"
 
 	"github.com/go-git/go-billy/v6"
+	"golang.org/x/sync/errgroup"
 
 	"github.com/go-git/go-git/v6/config"
 	"github.com/go-git/go-git/v6/internal/pathutil"
@@ -25,6 +28,7 @@ import (
 	"github.com/go-git/go-git/v6/plumbing/format/index"
 	"github.com/go-git/go-git/v6/plumbing/object"
 	"github.com/go-git/go-git/v6/plumbing/storer"
+	"github.com/go-git/go-git/v6/storage/filesystem"
 	"github.com/go-git/go-git/v6/utils/convert"
 	"github.com/go-git/go-git/v6/utils/ioutil"
 	"github.com/go-git/go-git/v6/utils/merkletrie"
@@ -899,6 +903,144 @@ func (w *Worktree) resetWorktreeToTree(cfg *config.Config, toTree *object.Tree, 
 	return w.r.Storer.SetIndex(idx)
 }
 
+// modeChange pairs a change with the index entry mode the path had before a
+// reset dropped it, which decides how a delete is applied.
+type modeChange struct {
+	merkletrie.Change
+	mode filemode.FileMode
+}
+
+// checkoutChanges applies a list of merkletrie changes to the worktree.
+//
+// For filesystem-backed storage the regular-file writes run in parallel:
+//
+//  1. Deletions are applied first, sequentially. rmFileAndDirsIfEmpty prunes
+//     now-empty parent directories, which must not race with the concurrent
+//     directory and file creation of the write phase.
+//  2. The remaining inserts and modifies of regular files are resolved and
+//     written by a pool of worker goroutines sharing the repository storage,
+//     whose object reads are safe for concurrent use. The shared indexBuilder
+//     is mutex-protected.
+//  3. Symlink and submodule entries encountered during the write phase are set
+//     aside and applied sequentially afterwards. As in Git, a symlink created
+//     concurrently could, on a case-insensitive path collision, replace a
+//     leading directory of a file another worker is writing, and
+//     checkoutChangeSubmodule reads repository configuration and is not safe
+//     to run concurrently.
+//     https://github.com/git/git/blob/v2.56.0/parallel-checkout.c#L91-L98
+//
+// For all other storage backends, everything runs sequentially.
+func (w *Worktree) checkoutChanges(cfg *config.Config, fs *worktreeFilesystem, changes []modeChange, t *object.Tree, b *indexBuilder) error {
+	if len(changes) == 0 {
+		return nil
+	}
+
+	_, isFSStorage := w.r.Storer.(*filesystem.Storage)
+	numWorkers := 1
+	if isFSStorage && len(changes) > 1 {
+		numWorkers = max(1, min(runtime.GOMAXPROCS(0), len(changes)))
+	}
+
+	if numWorkers <= 1 {
+		for _, mc := range changes {
+			if err := w.checkoutChange(cfg, fs, mc.Change, t, b, mc.mode); err != nil {
+				return err
+			}
+		}
+		return nil
+	}
+
+	writeCount := 0
+	for _, mc := range changes {
+		a, err := mc.Action()
+		if err != nil {
+			return err
+		}
+		if a == merkletrie.Delete {
+			if err := w.checkoutChange(cfg, fs, mc.Change, t, b, mc.mode); err != nil {
+				return err
+			}
+			continue
+		}
+		writeCount++
+	}
+
+	if writeCount == 0 {
+		return nil
+	}
+	numWorkers = max(1, min(numWorkers, writeCount))
+
+	workCh := make(chan modeChange, numWorkers)
+	var sequentialMu stdsync.Mutex
+	var sequential []modeChange
+
+	g, ctx := errgroup.WithContext(context.Background())
+	for range numWorkers {
+		g.Go(func() error {
+			// Tree.FindEntry fills an unsynchronized path cache, so each
+			// worker needs its own copy of t.
+			workerTree, err := object.GetTree(w.r.Storer, t.Hash)
+			if err != nil {
+				return err
+			}
+			for {
+				select {
+				case <-ctx.Done():
+					return nil
+				case mc, ok := <-workCh:
+					if !ok {
+						return nil
+					}
+					a, err := mc.Action()
+					if err != nil {
+						return err
+					}
+					name := mc.To.String()
+					e, err := workerTree.FindEntry(name)
+					if err != nil {
+						return err
+					}
+					if e.Mode == filemode.Submodule || e.Mode == filemode.Symlink {
+						sequentialMu.Lock()
+						sequential = append(sequential, mc)
+						sequentialMu.Unlock()
+						continue
+					}
+					if err := w.checkoutChangeRegularFile(cfg, fs, name, a, workerTree, e, b); err != nil {
+						return err
+					}
+				}
+			}
+		})
+	}
+
+	// The select on ctx.Done lets the producer stop when a worker fails,
+	// rather than blocking on a full channel while nothing is being consumed.
+feed:
+	for _, mc := range changes {
+		if mc.To == nil { // a delete, already applied above
+			continue
+		}
+		select {
+		case workCh <- mc:
+		case <-ctx.Done():
+			break feed
+		}
+	}
+	close(workCh)
+
+	if err := g.Wait(); err != nil {
+		return err
+	}
+
+	for _, mc := range sequential {
+		if err := w.checkoutChange(cfg, fs, mc.Change, t, b, mc.mode); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
 // resetWorktree updates the worktree to match idx, the index a merge reset
 // built, and then stores idx. files restricts the operation to the named
 // paths; nil means all files.
@@ -922,6 +1064,7 @@ func (w *Worktree) resetWorktree(cfg *config.Config, t *object.Tree, idx *index.
 
 	var entries map[string]*index.Entry
 	filesMap := buildFilePathMap(files)
+	validChanges := make([]modeChange, 0, len(changes))
 	for _, ch := range changes {
 		if len(files) > 0 {
 			file := ""
@@ -954,9 +1097,11 @@ func (w *Worktree) resetWorktree(cfg *config.Config, t *object.Tree, idx *index.
 			}
 		}
 
-		if err := w.checkoutChange(cfg, fs, ch, t, b, removedMode); err != nil {
-			return err
-		}
+		validChanges = append(validChanges, modeChange{ch, removedMode})
+	}
+
+	if err := w.checkoutChanges(cfg, fs, validChanges, t, b); err != nil {
+		return err
 	}
 
 	b.Write(idx)
@@ -1904,6 +2049,7 @@ func nonemptyDir(fs billy.Filesystem, name string) bool {
 }
 
 type indexBuilder struct {
+	mu      stdsync.Mutex
 	entries map[string]*index.Entry
 }
 
@@ -1917,6 +2063,9 @@ func newIndexBuilder(idx *index.Index) *indexBuilder {
 	}
 }
 
+// Write flushes all accumulated entries back into idx. It must only be called
+// after all concurrent Add/Remove calls have completed (e.g. after
+// errgroup.Wait or sync.WaitGroup.Wait returns).
 func (b *indexBuilder) Write(idx *index.Index) {
 	idx.Entries = idx.Entries[:0]
 	for _, e := range b.entries {
@@ -1925,10 +2074,14 @@ func (b *indexBuilder) Write(idx *index.Index) {
 }
 
 func (b *indexBuilder) Add(e *index.Entry) {
+	b.mu.Lock()
+	defer b.mu.Unlock()
 	b.entries[e.Name] = e
 }
 
 func (b *indexBuilder) Remove(name string) {
+	b.mu.Lock()
+	defer b.mu.Unlock()
 	delete(b.entries, filepath.ToSlash(name))
 }
 
