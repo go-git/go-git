@@ -14,6 +14,7 @@ import (
 	"github.com/go-git/go-git/v6/plumbing/object"
 	"github.com/go-git/go-git/v6/plumbing/protocol/capability"
 	"github.com/go-git/go-git/v6/plumbing/protocol/packp"
+	"github.com/go-git/go-git/v6/plumbing/storer"
 	"github.com/go-git/go-git/v6/storage/memory"
 	"github.com/go-git/go-git/v6/utils/ioutil"
 )
@@ -166,7 +167,7 @@ func BenchmarkUploadPackHaveNearTip3000(b *testing.B) { benchmarkUploadPackHaveN
 
 // benchCommit stores a commit with the given parents, dated when, and
 // returns its hash.
-func benchCommit(tb testing.TB, st *memory.Storage, when int64, parents ...plumbing.Hash) plumbing.Hash {
+func benchCommit(tb testing.TB, st storer.EncodedObjectStorer, when int64, parents ...plumbing.Hash) plumbing.Hash {
 	tb.Helper()
 	sig := object.Signature{Name: "bench", Email: "bench@example.com", When: time.Unix(when, 0).UTC()}
 	c := &object.Commit{Author: sig, Committer: sig, Message: fmt.Sprintf("commit %d", when), TreeHash: plumbing.ZeroHash, ParentHashes: parents}

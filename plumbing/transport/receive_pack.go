@@ -89,6 +89,25 @@ type PostReceiveInfo struct {
 // components. Refusals are reported per command when report-status is negotiated.
 // A request naming the same reference twice is rejected before hooks or reference
 // updates run. See ErrFunnyRefname and ErrDuplicateRefname.
+// Commands are also subject to the receive.denyCurrentBranch,
+// receive.denyDeleteCurrent and receive.denyNonFastForwards settings in the
+// storer's configuration, with git's defaults. Only the configuration the
+// storer returns is read. Unlike git, ReceivePack does not merge in the system
+// or global configuration, so a setting made only there has no effect. A
+// repository whose configuration does not set core.bare is treated as bare,
+// as git treats one opened without a work tree. The exception is a storer
+// that does not implement [github.com/go-git/go-git/v6/x/storage.WorktreeStorer],
+// such as the memory storer, which may record core.bare only in
+// Config.Core.IsBare rather than in Config.Raw. For such a storer
+// Config.Core.IsBare decides when Config.Raw does not set core.bare.
+// A branch checked out in a linked worktree is protected
+// too, even in a bare repository, when the storer exposes its worktrees
+// directory by implementing [github.com/go-git/go-git/v6/x/storage.WorktreeStorer].
+// A worktree whose HEAD is detached protects no branch. Git also treats the
+// branch being rebased or bisected on a detached HEAD as checked out, which
+// ReceivePack does not detect.
+// receive.denyCurrentBranch=updateInstead refuses the command with
+// ErrUpdateInsteadUnsupported, because no work tree is updated here.
 // Commands execute even when report-status is not requested. Updates use the
 // storer's compare-and-set operation on the resolved target. Symbolic resolution
 // is separate from the update, and deletes check the old value before a separate
@@ -124,6 +143,11 @@ func ReceivePack(
 
 	if opts == nil {
 		opts = &ReceivePackRequest{}
+	}
+
+	policy, err := loadReceivePolicy(st)
+	if err != nil {
+		return err
 	}
 
 	if opts.AdvertiseRefs || !opts.StatelessRPC {
@@ -309,7 +333,7 @@ func ReceivePack(
 
 	var firstErr error
 	cmdStatus := make(map[plumbing.ReferenceName]error)
-	updateReferences(st, updreq, cmdStatus, &firstErr)
+	updateReferences(st, updreq, policy, progress, cmdStatus, &firstErr)
 
 	if opts.Hooks.PostReceive != nil {
 		applied := make([]*packp.Command, 0, len(updreq.Commands))
@@ -504,15 +528,23 @@ func checkRefname(ref plumbing.ReferenceName) error {
 	return nil
 }
 
-func updateReferences(st storage.Storer, req *packp.UpdateRequests, cmdStatus map[plumbing.ReferenceName]error, firstErr *error) {
+// updateReferences applies the commands of req that policy allows, writing
+// git's explanation of each refusal to messages.
+func updateReferences(st storage.Storer, req *packp.UpdateRequests, policy receivePolicy, messages io.Writer, cmdStatus map[plumbing.ReferenceName]error, firstErr *error) {
+	checked := loadCheckedOut(st)
 	for _, cmd := range req.Commands {
 		if err := checkRefname(cmd.Name); err != nil {
 			setStatus(cmdStatus, firstErr, cmd.Name, err)
 			continue
 		}
 
+		updateInstead, err := policy.checkCurrentBranch(cmd, checked, messages)
+		if err != nil {
+			setStatus(cmdStatus, firstErr, cmd.Name, err)
+			continue
+		}
+
 		var current *plumbing.Reference
-		var err error
 		if cmd.Action() == packp.Create {
 			// An existing symbolic ref still occupies the name when its
 			// target is missing. A create must not overwrite that alias.
@@ -538,6 +570,16 @@ func updateReferences(st storage.Storer, req *packp.UpdateRequests, cmdStatus ma
 				setStatus(cmdStatus, firstErr, cmd.Name, ErrMissingObject)
 				continue
 			}
+		}
+
+		if err := policy.checkUpdate(st, cmd, checked, messages); err != nil {
+			setStatus(cmdStatus, firstErr, cmd.Name, err)
+			continue
+		}
+
+		if updateInstead {
+			setStatus(cmdStatus, firstErr, cmd.Name, ErrUpdateInsteadUnsupported)
+			continue
 		}
 
 		switch cmd.Action() {

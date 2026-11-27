@@ -2512,14 +2512,16 @@ func (s *RepositorySuite) TestPushWithProgress() {
 }
 
 func (s *RepositorySuite) TestPushDepth() {
-	server, err := PlainClone(s.T().TempDir(), &CloneOptions{
-		URL: s.GetBasicLocalRepositoryURL(),
+	url := s.T().TempDir()
+	server, err := PlainClone(url, &CloneOptions{
+		URL:  s.GetBasicLocalRepositoryURL(),
+		Bare: true,
 	})
 	s.Require().NoError(err)
 	defer func() { _ = server.Close() }()
 
 	r, err := Clone(memory.NewStorage(), memfs.New(), &CloneOptions{
-		URL:   server.wt.Root(),
+		URL:   url,
 		Depth: 1,
 	})
 	s.NoError(err)
@@ -2550,6 +2552,56 @@ func (s *RepositorySuite) TestPushDepth() {
 	AssertReferences(s.T(), r, map[string]string{
 		"refs/remotes/origin/master": hash.String(),
 	})
+}
+
+func (s *RepositorySuite) TestPushToCheckedOutBranch() {
+	for _, tc := range []struct {
+		denyCurrentBranch string
+		wantErr           string
+	}{
+		{wantErr: "command error on refs/heads/master: branch is currently checked out"},
+		{denyCurrentBranch: "ignore"},
+	} {
+		s.Run("denyCurrentBranch="+tc.denyCurrentBranch, func() {
+			url := s.T().TempDir()
+			server, err := PlainClone(url, &CloneOptions{URL: s.GetBasicLocalRepositoryURL()})
+			s.Require().NoError(err)
+			defer func() { _ = server.Close() }()
+			if tc.denyCurrentBranch != "" {
+				cfg, err := server.Config()
+				s.Require().NoError(err)
+				cfg.Raw.Section("receive").SetOption("denyCurrentBranch", tc.denyCurrentBranch)
+				s.Require().NoError(server.SetConfig(cfg))
+			}
+			before, err := server.Reference(plumbing.Master, false)
+			s.Require().NoError(err)
+
+			r, err := Clone(memory.NewStorage(), memfs.New(), &CloneOptions{URL: url})
+			s.Require().NoError(err)
+			defer func() { _ = r.Close() }()
+			w, err := r.Worktree()
+			s.Require().NoError(err)
+			hash, err := w.Commit("foo", &CommitOptions{
+				Author:            defaultSignature(),
+				Committer:         defaultSignature(),
+				AllowEmptyCommits: true,
+			})
+			s.Require().NoError(err)
+
+			err = r.Push(&PushOptions{})
+
+			want := hash
+			if tc.wantErr != "" {
+				s.EqualError(err, tc.wantErr)
+				want = before.Hash()
+			} else {
+				s.NoError(err)
+			}
+			AssertReferences(s.T(), server, map[string]string{
+				"refs/heads/master": want.String(),
+			})
+		})
+	}
 }
 
 func (s *RepositorySuite) TestPushNonExistentRemote() {

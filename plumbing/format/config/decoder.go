@@ -25,7 +25,7 @@ func (d *Decoder) Decode(config *Config) error {
 	}
 
 	idx := newDecodeIndex(config)
-	cb := func(s, ss, k, v string, _ bool) error {
+	cb := func(s, ss, k, v string, blank bool) error {
 		// A header line carries no option and is reported only so that
 		// the section it names comes into existence.
 		section, subsection := idx.lookup(s, ss)
@@ -33,10 +33,11 @@ func (d *Decoder) Decode(config *Config) error {
 			return nil
 		}
 
+		opt := &Option{Key: k, Value: v, NoValue: blank}
 		if subsection != nil {
-			subsection.AddOption(k, v)
+			subsection.Options = append(subsection.Options, opt)
 		} else {
-			section.AddOption(k, v)
+			section.Options = append(section.Options, opt)
 		}
 		return nil
 	}
