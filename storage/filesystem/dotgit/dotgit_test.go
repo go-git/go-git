@@ -9,6 +9,7 @@ import (
 	"io"
 	"io/fs"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"regexp"
 	"runtime"
@@ -28,7 +29,9 @@ import (
 	"github.com/stretchr/testify/suite"
 
 	"github.com/go-git/go-git/v6/internal/packhandle"
+	"github.com/go-git/go-git/v6/internal/test/gitenv"
 	"github.com/go-git/go-git/v6/plumbing"
+	formatcfg "github.com/go-git/go-git/v6/plumbing/format/config"
 	"github.com/go-git/go-git/v6/plumbing/format/idxfile"
 	"github.com/go-git/go-git/v6/storage"
 )
@@ -2450,5 +2453,62 @@ func (s *SuiteDotGit) TestModuleRejectsRootShapedNames() {
 	} {
 		_, err := d.Module(n)
 		s.ErrorIs(err, ErrModuleNameEscape, "name %q", n)
+	}
+}
+
+func TestDotGitObjectFormat(t *testing.T) {
+	t.Parallel()
+
+	assert.Equal(t, formatcfg.SHA1, NewWithOptions(memfs.New(), Options{}).ObjectFormat())
+	assert.Equal(t, formatcfg.SHA1, New(memfs.New()).ObjectFormat())
+
+	d := NewWithOptions(memfs.New(), Options{ObjectFormat: formatcfg.SHA256})
+	assert.Equal(t, formatcfg.SHA256, d.ObjectFormat())
+
+	require.NoError(t, d.SetObjectFormat(formatcfg.SHA1))
+	assert.Equal(t, formatcfg.SHA1, d.ObjectFormat())
+}
+
+func TestObjectsWithPrefixSHA256(t *testing.T) {
+	t.Parallel()
+	if _, err := exec.LookPath("git"); err != nil {
+		t.Skipf("git not found: %v", err)
+	}
+
+	dir := t.TempDir()
+	runGit := func(args ...string) string {
+		t.Helper()
+		cmd := gitenv.Command("git", append([]string{"-C", dir}, args...)...)
+		cmd.Stdin = strings.NewReader("hello\n")
+		out, err := cmd.Output()
+		require.NoError(t, err, "git %v", args)
+		return strings.TrimSpace(string(out))
+	}
+	runGit("init", "-q", "--bare", "--object-format=sha256")
+	id := runGit("hash-object", "-w", "--stdin")
+	require.Len(t, id, 64)
+
+	for _, exclusive := range []bool{false, true} {
+		d := NewWithOptions(osfs.New(dir), Options{
+			ObjectFormat:    formatcfg.SHA256,
+			ExclusiveAccess: exclusive,
+		})
+		for _, n := range []int{40, 42, 62, 64} {
+			hexPrefix := id[:n]
+			assert.Equal(t, id, runGit("rev-parse", "--verify", "--quiet", hexPrefix))
+
+			prefix, err := hex.DecodeString(hexPrefix)
+			require.NoError(t, err)
+			hashes, err := d.ObjectsWithPrefix(prefix)
+			require.NoError(t, err)
+			require.Len(t, hashes, 1, "exclusive=%v prefix=%s", exclusive, hexPrefix)
+			assert.Equal(t, id, hashes[0].String())
+		}
+
+		tooLong, err := hex.DecodeString(id + "00")
+		require.NoError(t, err)
+		hashes, err := d.ObjectsWithPrefix(tooLong)
+		require.NoError(t, err)
+		assert.Empty(t, hashes)
 	}
 }

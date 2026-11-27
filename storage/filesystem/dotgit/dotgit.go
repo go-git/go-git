@@ -1128,7 +1128,7 @@ func (d *DotGit) ObjectsWithPrefix(prefix []byte) ([]plumbing.Hash, error) {
 	// Handle edge cases.
 	if len(prefix) < 1 {
 		return d.Objects()
-	} else if len(prefix) > plumbing.ZeroHash.Size() {
+	} else if len(prefix) > d.ObjectFormat().Size() {
 		return nil, nil
 	}
 
@@ -2180,6 +2180,16 @@ func alternatePathForFS(path, root string) string {
 // Fs returns the underlying filesystem of the DotGit folder.
 func (d *DotGit) Fs() billy.Filesystem {
 	return d.fs
+}
+
+// ObjectFormat returns the object format of the repository, as set by
+// Options.ObjectFormat or SetObjectFormat. An unset format is reported
+// as formatcfg.DefaultObjectFormat.
+func (d *DotGit) ObjectFormat() formatcfg.ObjectFormat {
+	if d.options.ObjectFormat == formatcfg.UnsetObjectFormat {
+		return formatcfg.DefaultObjectFormat
+	}
+	return d.options.ObjectFormat
 }
 
 // SetObjectFormat configures the object format for this DotGit instance.
