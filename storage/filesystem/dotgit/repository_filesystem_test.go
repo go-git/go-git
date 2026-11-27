@@ -2,6 +2,8 @@ package dotgit
 
 import (
 	"os"
+
+	"github.com/go-git/go-billy/v6/util"
 )
 
 func (s *SuiteDotGit) TestRepositoryFilesystem() {
@@ -233,4 +235,66 @@ func (s *SuiteDotGit) TestRepositoryFilesystemAbsolutePathFallback() {
 
 	_, err = commonDotGitFs.Stat("arbitrary/path")
 	s.True(os.IsNotExist(err), "arbitrary path should NOT exist in commonDotGitFs")
+}
+
+// TestSetShallowInLinkedWorktree checks that a linked worktree replaces the
+// shallow file in the common directory, and takes shallow.lock there, where
+// Git takes it too.
+func (s *SuiteDotGit) TestSetShallowInLinkedWorktree() {
+	fs := s.EmptyFS()
+
+	s.Require().NoError(fs.MkdirAll("dotGit", 0o777))
+	dotGitFs, err := fs.Chroot("dotGit")
+	s.Require().NoError(err)
+	s.Require().NoError(fs.MkdirAll("commonDotGit", 0o777))
+	commonDotGitFs, err := fs.Chroot("commonDotGit")
+	s.Require().NoError(err)
+
+	dir := New(NewRepositoryFilesystem(dotGitFs, commonDotGitFs))
+	s.Require().NoError(util.WriteFile(commonDotGitFs, shallowPath, []byte("old\n"), 0o644))
+
+	s.Require().NoError(util.WriteFile(commonDotGitFs, shallowLockPath, nil, 0o644))
+	s.Require().ErrorIs(dir.SetShallow([]byte("new\n")), os.ErrExist)
+	s.Require().NoError(commonDotGitFs.Remove(shallowLockPath))
+
+	s.Require().NoError(dir.SetShallow([]byte("new\n")))
+	got, err := util.ReadFile(commonDotGitFs, shallowPath)
+	s.Require().NoError(err)
+	s.Equal("new\n", string(got))
+	for _, name := range []string{shallowPath, shallowLockPath} {
+		_, err = dotGitFs.Lstat(name)
+		s.ErrorIs(err, os.ErrNotExist, name)
+	}
+
+	s.Require().NoError(dir.SetShallow(nil))
+	_, err = commonDotGitFs.Lstat(shallowPath)
+	s.ErrorIs(err, os.ErrNotExist)
+}
+
+// TestSetShallowSymlinkInLinkedWorktree checks that a symlinked shallow file
+// in the common directory is resolved there, not in the worktree's own git
+// directory.
+func (s *SuiteDotGit) TestSetShallowSymlinkInLinkedWorktree() {
+	fs := s.EmptyFS()
+
+	s.Require().NoError(fs.MkdirAll("dotGit", 0o777))
+	dotGitFs, err := fs.Chroot("dotGit")
+	s.Require().NoError(err)
+	s.Require().NoError(fs.MkdirAll("commonDotGit", 0o777))
+	commonDotGitFs, err := fs.Chroot("commonDotGit")
+	s.Require().NoError(err)
+
+	dir := New(NewRepositoryFilesystem(dotGitFs, commonDotGitFs))
+	s.Require().NoError(util.WriteFile(commonDotGitFs, "real-shallow", []byte("old\n"), 0o644))
+	s.Require().NoError(commonDotGitFs.Symlink("real-shallow", shallowPath))
+
+	s.Require().NoError(dir.SetShallow([]byte("new\n")))
+
+	got, err := util.ReadFile(commonDotGitFs, "real-shallow")
+	s.Require().NoError(err)
+	s.Equal("new\n", string(got))
+	for _, name := range []string{"real-shallow", "real-shallow.lock"} {
+		_, err = dotGitFs.Lstat(name)
+		s.ErrorIs(err, os.ErrNotExist, name)
+	}
 }

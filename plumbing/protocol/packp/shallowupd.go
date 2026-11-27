@@ -48,6 +48,9 @@ func (r *ShallowUpdate) decodeShallowLine(line []byte) error {
 		return err
 	}
 
+	if len(r.Shallows) >= maxSectionLines {
+		return fmt.Errorf("too many shallow lines (limit %d)", maxSectionLines)
+	}
 	r.Shallows = append(r.Shallows, hash)
 	return nil
 }
@@ -58,6 +61,9 @@ func (r *ShallowUpdate) decodeUnshallowLine(line []byte) error {
 		return err
 	}
 
+	if len(r.Unshallows) >= maxSectionLines {
+		return fmt.Errorf("too many unshallow lines (limit %d)", maxSectionLines)
+	}
 	r.Unshallows = append(r.Unshallows, hash)
 	return nil
 }
