@@ -123,7 +123,11 @@ func (w *Worktree) status(cfg *config.Config, ss StatusStrategy, commit plumbing
 			fs.Worktree = Deleted
 		case merkletrie.Insert:
 			fs.Worktree = Untracked
-			fs.Staging = Untracked
+			// A file removed from the index but still on disk (git rm --cached)
+			// is both a staged deletion and untracked; keep the staged deletion.
+			if fs.Staging == Unmodified {
+				fs.Staging = Untracked
+			}
 		case merkletrie.Modify:
 			fs.Worktree = Modified
 		}
