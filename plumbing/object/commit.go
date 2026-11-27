@@ -11,6 +11,7 @@ import (
 	"github.com/ProtonMail/go-crypto/openpgp"
 
 	"github.com/go-git/go-git/v6/plumbing"
+	formatcfg "github.com/go-git/go-git/v6/plumbing/format/config"
 	"github.com/go-git/go-git/v6/plumbing/storer"
 	"github.com/go-git/go-git/v6/utils/ioutil"
 	"github.com/go-git/go-git/v6/utils/sync"
@@ -489,8 +490,14 @@ var ErrMultipleSignatures = errors.New("commit has multiple signatures")
 
 // Verify performs PGP verification of the commit with a provided armored
 // keyring and returns openpgp.Entity associated with verifying key on success.
+//
+// The signature is read from the header of the commit's object format,
+// Signature (gpgsig) for SHA-1 and SignatureSHA256 (gpgsig-sha256) for
+// SHA-256, as Git does. The other header is never used. A commit built in
+// memory has no Hash, so its format is taken from TreeHash.
 func (c *Commit) Verify(armoredKeyRing string) (*openpgp.Entity, error) {
-	if countSignatureBlocks([]byte(c.Signature)) > 1 {
+	sig := c.signatureForVerify()
+	if countSignatureBlocks([]byte(sig)) > 1 {
 		return nil, ErrMultipleSignatures
 	}
 
@@ -501,7 +508,7 @@ func (c *Commit) Verify(armoredKeyRing string) (*openpgp.Entity, error) {
 	}
 
 	// Extract signature.
-	signature := strings.NewReader(c.Signature)
+	signature := strings.NewReader(sig)
 
 	encoded := &plumbing.MemoryObject{}
 	// Encode commit components, excluding signature and get a reader object.
@@ -514,6 +521,20 @@ func (c *Commit) Verify(armoredKeyRing string) (*openpgp.Entity, error) {
 	}
 
 	return openpgp.CheckArmoredDetachedSignature(keyring, er, signature, nil)
+}
+
+// signatureForVerify returns the signature Git would verify for c. Git
+// reads only the header of the repository's hash algorithm, see
+// parse_buffer_signed_by_header in commit.c.
+func (c *Commit) signatureForVerify() string {
+	format := c.Hash.Format()
+	if c.Hash.IsZero() {
+		format = c.TreeHash.Format()
+	}
+	if format == formatcfg.SHA256 {
+		return c.SignatureSHA256
+	}
+	return c.Signature
 }
 
 // Less defines a compare function to determine which commit is 'earlier' by:
