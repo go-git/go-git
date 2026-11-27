@@ -90,13 +90,15 @@ func (t *Transport) connect(ctx context.Context, req *transport.Request) (io.Rea
 	gitProtocol := transport.GitProtocolEnv(req.Protocol)
 
 	pr, pw := io.Pipe()
-	sr, sw := io.Pipe()
+	// The server writes through a buffer, so that it can answer a round of
+	// haves while the client is writing the next one.
+	answers := newBufferedPipe()
 
 	done := make(chan struct{})
 
 	closeAll := func() error {
 		_ = pw.Close()
-		closeErr := sr.Close()
+		closeErr := answers.CloseRead()
 		<-done // Wait for server goroutine to finish
 		if closer, ok := st.(io.Closer); ok {
 			if err := closer.Close(); err != nil && closeErr == nil {
@@ -108,17 +110,17 @@ func (t *Transport) connect(ctx context.Context, req *transport.Request) (io.Rea
 
 	go func() {
 		defer close(done)
-		// Both pipe ends stay this goroutine's to close: CloseWithError below is
-		// how a server error reaches the client's reader, and a server that
-		// closed sw itself would first store a plain EOF there. The server
+		// Both pipe ends stay this goroutine's to close: CloseWrite below is how a
+		// server error reaches the client's reader, and a server that closed
+		// its writer itself would first store a plain EOF there. The server
 		// commands close the writer they are handed on every exit, so it is
 		// wrapped, exactly as pr already is.
-		err := serverFn(ctx, st, io.NopCloser(pr), ioutil.WriteNopCloser(sw), gitProtocol)
-		_ = sw.CloseWithError(err)
+		err := serverFn(ctx, st, io.NopCloser(pr), ioutil.WriteNopCloser(answers), gitProtocol)
+		answers.CloseWrite(err)
 		_ = pr.Close()
 	}()
 
-	return sr, pw, closeAll, nil
+	return answers, pw, closeAll, nil
 }
 
 // fileConn implements transport.Conn over in-process pipes.

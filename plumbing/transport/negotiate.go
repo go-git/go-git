@@ -17,54 +17,183 @@ import (
 	xstorage "github.com/go-git/go-git/v6/x/storage"
 )
 
+// Pacing of the have rounds, as measured from the git client: how many haves
+// a round offers and when the client stops, not which haves they are. The
+// first round offers 16 haves. After that the two kinds of connection differ:
+//
+//   - Over a stateless connection every round is a request of its own that
+//     repeats the wants and the common haves, so rounds should be few. The
+//     total offered doubles with each round, and from 16384 on grows by a
+//     tenth.
+//   - Over a stateful connection the server answers on the same pipe or
+//     socket while haves are being written, and a round too large to
+//     buffer would block both ends. The total doubles once, to 32, and
+//     then grows by 32 a round.
+//
+// After a first acknowledgement the client stops offering haves once more
+// than 256 in a row have gone unacknowledged, and accepts a larger pack
+// instead. The count is checked between rounds, so the round that crosses
+// it is sent whole and "done" follows in a round without new haves.
 const (
-	initialFlush  = 16
-	pipeSafeFlush = 32
-	largeFlush    = 16384
-	maxInVein     = 256
+	firstHaveBatch  = 16
+	maxUnackedHaves = 256
+
+	// statefulHaveStep is the most a stateful round adds to the total.
+	statefulHaveStep = 32
+	// largeHaveTotal is the total from which stateless growth slows down.
+	largeHaveTotal = 16384
 )
 
-func nextFlush(statelessRPC bool, count int) int {
-	if statelessRPC {
-		if count < largeFlush {
-			return count << 1
-		}
-		return count * 11 / 10
+// nextHaveTotal returns how many haves should have been offered by the end
+// of the next round, given that total were due by the end of this one.
+func nextHaveTotal(statelessRPC bool, total int) int {
+	switch {
+	case statelessRPC && total < largeHaveTotal, !statelessRPC && total < statefulHaveStep:
+		return total * 2
+	case statelessRPC:
+		return total * 11 / 10
+	default:
+		return total + statefulHaveStep
 	}
-
-	if count < pipeSafeFlush {
-		return count << 1
-	}
-
-	return count + pipeSafeFlush
 }
 
-func applyServerACKs(
-	statelessRPC bool,
-	acks []packp.ACK,
-	common map[plumbing.Hash]struct{},
-	statelessCommon *[]plumbing.Hash,
-	gotContinue *bool,
-	gotReady *bool,
-	inVein *int,
-) {
+// haveNegotiator decides which haves go into each round of a v0 fetch, keeps
+// what the server has said about them, and knows which of the server's
+// answers are still to be read.
+type haveNegotiator struct {
+	// statelessRPC says that every round is a request of its own, to a
+	// server that remembers nothing of the rounds before it.
+	statelessRPC bool
+
+	// pending are the haves not offered yet. They are taken from the end.
+	pending []plumbing.Hash
+	// target is how many haves are to be offered by the end of the next
+	// round, and offered how many have been so far.
+	target, offered int
+
+	// common holds the haves the server reported as common.
+	common map[plumbing.Hash]struct{}
+	// repeat lists those haves in the order they were first reported, for
+	// a stateless client to send again with every later round.
+	repeat []plumbing.Hash
+
+	// anyAcknowledged is set by the first acknowledgement that carries a
+	// status. Only from then on do unacknowledged haves count towards
+	// giving up: before it, they are all the client has to go on.
+	anyAcknowledged bool
+	// ready is set once the server has said it knows enough to build a
+	// pack.
+	ready bool
+	// unacknowledged counts the haves offered since the server last
+	// reported a have as common for the first time.
+	unacknowledged int
+
+	// ahead says that a round has been written on a stateful connection
+	// whose answer has not been read yet.
+	ahead bool
+	// final is set by an acknowledgement without a status before "done" was
+	// sent. A server that knows no multi-ack sends one for the first have it
+	// shares and nothing more after it, so the client goes straight to
+	// "done" and has no further answer to wait for.
+	final bool
+}
+
+// newHaveNegotiator returns a negotiator that offers haves. It works on a
+// copy, so the caller's slice is left as it is.
+func newHaveNegotiator(statelessRPC bool, haves []plumbing.Hash) *haveNegotiator {
+	return &haveNegotiator{
+		statelessRPC: statelessRPC,
+		pending:      slices.Clone(haves),
+		target:       firstHaveBatch,
+		common:       map[plumbing.Hash]struct{}{},
+	}
+}
+
+// nextRound returns the haves of the next round and whether it carries
+// "done".
+//
+// A round is never cut short. It is the last one when the haves run out
+// before it is full, which includes having none left at all. It is also the
+// last one, and offers nothing new, once the server has said "ready", has
+// sent an acknowledgement without a status, or more than maxUnackedHaves
+// haves in a row have gone unacknowledged; these are looked at between
+// rounds, so the round that crosses the limit is sent
+// whole and "done" follows on its own.
+func (n *haveNegotiator) nextRound() (haves []plumbing.Hash, done bool) {
+	// A stateless server remembers nothing, so every request repeats the
+	// common haves, the last one included: it is the one the pack is built
+	// for.
+	if n.statelessRPC {
+		haves = slices.Clone(n.repeat)
+	}
+
+	batch := n.target - n.offered
+	if n.ready || n.final || (n.anyAcknowledged && n.unacknowledged > maxUnackedHaves) {
+		batch = 0
+	}
+	fresh := min(batch, len(n.pending))
+	for range fresh {
+		haves = append(haves, n.pending[len(n.pending)-1])
+		n.pending = n.pending[:len(n.pending)-1]
+	}
+	n.offered += fresh
+	n.unacknowledged += fresh
+	n.target = nextHaveTotal(n.statelessRPC, n.target)
+
+	return haves, batch == 0 || fresh < batch
+}
+
+// answersDue returns how many of the server's answers are to be read after
+// the round just written.
+//
+// A stateless round is answered before the next request can be made. On a
+// stateful connection the client stays one round ahead, as git does: the
+// answer to a round is read after the next round has been written, so that
+// the server always has haves to work on. "done" ends that, and the answer
+// still owed is read along with the last one. The connection therefore has
+// to hold the answer to one round while the next is being written.
+func (n *haveNegotiator) answersDue(done bool) int {
+	switch {
+	case n.final:
+		return 0
+	case n.statelessRPC:
+		return 1
+	case done && n.ahead:
+		n.ahead = false
+		return 2
+	case done:
+		return 1
+	case n.ahead:
+		return 1
+	default:
+		n.ahead = true
+		return 0
+	}
+}
+
+// record takes in the acknowledgements of one server response.
+func (n *haveNegotiator) record(acks []packp.ACK) {
 	for _, ack := range acks {
-		if !*gotContinue && ack.Status > 0 {
-			*gotContinue = true
+		if ack.Status > 0 {
+			n.anyAcknowledged = true
 		}
 
 		switch ack.Status {
+		case 0:
+			n.final = true
 		case packp.ACKContinue:
-			*inVein = 0
+			n.unacknowledged = 0
 		case packp.ACKReady:
-			*gotReady = true
-			*inVein = 0
+			n.ready = true
+			n.unacknowledged = 0
 		case packp.ACKCommon:
-			_, alreadyCommon := common[ack.Hash]
-			common[ack.Hash] = struct{}{}
-			if statelessRPC && !alreadyCommon {
-				*statelessCommon = append(*statelessCommon, ack.Hash)
-				*inVein = 0
+			_, known := n.common[ack.Hash]
+			n.common[ack.Hash] = struct{}{}
+			if !known {
+				n.unacknowledged = 0
+				if n.statelessRPC {
+					n.repeat = append(n.repeat, ack.Hash)
+				}
 			}
 		}
 	}
@@ -185,43 +314,10 @@ func NegotiatePack(
 		return nil, ErrNoChange
 	}
 
-	common := map[plumbing.Hash]struct{}{}
-	var statelessCommon []plumbing.Hash
-	var inVein int
-	var done bool
-	var gotContinue bool
-	var gotReady bool
-	var sendDoneAfterReady bool
-	firstRound := true
-	flushAt := initialFlush
-
-	for !done {
-		var uphav packp.UploadHaves
-		if statelessRPC && !sendDoneAfterReady {
-			uphav.Haves = append(uphav.Haves, statelessCommon...)
-		}
-
-		batchSize := 0
-		if !sendDoneAfterReady {
-			batchSize = flushAt
-			if gotContinue {
-				remaining := maxInVein - inVein
-				if remaining <= 0 {
-					batchSize = 0
-				} else if batchSize > remaining {
-					batchSize = remaining
-				}
-			}
-		}
-
-		for i := 0; i < batchSize && len(req.Haves) > 0; i++ {
-			uphav.Haves = append(uphav.Haves, req.Haves[len(req.Haves)-1])
-			req.Haves = req.Haves[:len(req.Haves)-1]
-			inVein++
-		}
-
-		done = sendDoneAfterReady || len(req.Haves) == 0 || (gotContinue && inVein >= maxInVein)
-		uphav.Done = done
+	negotiator := newHaveNegotiator(statelessRPC, req.Haves)
+	for firstRound := true; ; firstRound = false {
+		haves, done := negotiator.nextRound()
+		uphav := packp.UploadHaves{Haves: haves, Done: done}
 
 		if isSubset(req.Wants, uphav.Haves) && len(upreq.Shallows) == 0 {
 			if err := pktline.WriteFlush(writer); err != nil {
@@ -239,9 +335,8 @@ func NegotiatePack(
 			}
 		}
 
-		// The server sends its shallow-update before it reads any haves
-		// (upload-pack.c receive_needs), so read it first, as git's
-		// fetch-pack does.
+		// On a stateful connection the server sends its shallow-update
+		// before it reads any haves, so it is read before they are written.
 		if !statelessRPC {
 			if err := readShallows(statelessRPC, reader, req, &shallowInfo, firstRound); err != nil {
 				return nil, err
@@ -261,22 +356,16 @@ func NegotiatePack(
 			}
 		}
 
-		if done || len(uphav.Haves) > 0 {
+		for range negotiator.answersDue(done) {
 			var srvrs packp.ServerResponse
 			if err := srvrs.Decode(reader); err != nil {
 				return nil, fmt.Errorf("decoding server-response: %w", err)
 			}
-			applyServerACKs(statelessRPC, srvrs.ACKs, common, &statelessCommon, &gotContinue, &gotReady, &inVein)
+			negotiator.record(srvrs.ACKs)
 		}
-		if sendDoneAfterReady {
+		if done {
 			break
 		}
-		if gotReady {
-			sendDoneAfterReady = true
-		}
-
-		firstRound = false
-		flushAt = nextFlush(statelessRPC, flushAt)
 	}
 
 	if !statelessRPC {
