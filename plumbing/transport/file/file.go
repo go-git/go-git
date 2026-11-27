@@ -6,13 +6,14 @@ import (
 	"fmt"
 	"io"
 
+	"github.com/go-git/go-git/v6/internal/transport/loader"
 	"github.com/go-git/go-git/v6/plumbing/transport"
 	"github.com/go-git/go-git/v6/storage"
 	"github.com/go-git/go-git/v6/utils/ioutil"
 )
 
-// ServerFunc is a function that runs a git server-side command over pipes.
-type ServerFunc func(ctx context.Context, st storage.Storer, r io.ReadCloser, w io.WriteCloser, gitProtocol string) error
+// serverFunc is a function that runs a git server-side command over pipes.
+type serverFunc func(ctx context.Context, st storage.Storer, r io.ReadCloser, w io.WriteCloser, gitProtocol string) error
 
 func defaultUploadPack(ctx context.Context, st storage.Storer, r io.ReadCloser, w io.WriteCloser, gitProtocol string) error {
 	return transport.UploadPack(ctx, st, r, w, &transport.UploadPackRequest{
@@ -33,27 +34,28 @@ func defaultUploadArchive(ctx context.Context, st storage.Storer, r io.ReadClose
 
 // Options configures the file transport.
 type Options struct {
-	// Loader resolves URLs to storage.Storer instances. If nil,
-	// transport.DefaultLoader is used.
+	// Loader resolves URLs to storage.Storer instances. If nil, a
+	// filesystem loader that resolves URL paths against the root of the
+	// OS filesystem is used.
 	Loader transport.Loader
 }
 
 // Transport implements the file:// transport protocol.
 type Transport struct {
 	loader        transport.Loader
-	uploadPack    ServerFunc
-	receivePack   ServerFunc
-	uploadArchive ServerFunc
+	uploadPack    serverFunc
+	receivePack   serverFunc
+	uploadArchive serverFunc
 }
 
 // NewTransport creates a file transport with the given options.
 func NewTransport(opts Options) *Transport {
-	loader := opts.Loader
-	if loader == nil {
-		loader = transport.DefaultLoader
+	l := opts.Loader
+	if l == nil {
+		l = loader.Default()
 	}
 	return &Transport{
-		loader:        loader,
+		loader:        l,
 		uploadPack:    defaultUploadPack,
 		receivePack:   defaultReceivePack,
 		uploadArchive: defaultUploadArchive,
@@ -70,7 +72,7 @@ func (t *Transport) Connect(ctx context.Context, req *transport.Request) (transp
 }
 
 func (t *Transport) connect(ctx context.Context, req *transport.Request) (io.Reader, *io.PipeWriter, func() error, error) {
-	var serverFn ServerFunc
+	var serverFn serverFunc
 	switch req.Command {
 	case transport.UploadPackService:
 		serverFn = t.uploadPack
