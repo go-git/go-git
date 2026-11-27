@@ -17,6 +17,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
+	"github.com/go-git/go-git/v6/internal/test/gitenv"
 	"github.com/go-git/go-git/v6/plumbing"
 	"github.com/go-git/go-git/v6/plumbing/cache"
 	"github.com/go-git/go-git/v6/plumbing/format/pktline"
@@ -290,6 +291,35 @@ func TestUploadPackV1NegotiationOnSkewedHistoryMatchesCanonical(t *testing.T) {
 			wants: []string{"W"},
 			haves: []string{"Cm", "u1"},
 		},
+		{
+			// W1 and W2 are dated the same second, before the common Cm.
+			// Upstream walks wants of one date in request order, so W1 is
+			// known to reach A by the time the walk from W2 stops at it.
+			name: "wants dated the same second, parent first",
+			build: func(at func(int, string, ...string)) {
+				at(1, "A")
+				at(5, "Cm", "A")
+				at(2, "W1", "A")
+				at(2, "W2", "W1")
+			},
+			wants:     []string{"W1", "W2"},
+			haves:     []string{"Cm", "u1"},
+			reachWalk: true,
+		},
+		{
+			// In the other order the walk from W2 comes first and skips W1
+			// as older than the cutoff, so upstream withholds readiness.
+			name: "wants dated the same second, child first",
+			build: func(at func(int, string, ...string)) {
+				at(1, "A")
+				at(5, "Cm", "A")
+				at(2, "W1", "A")
+				at(2, "W2", "W1")
+			},
+			wants:     []string{"W2", "W1"},
+			haves:     []string{"Cm", "u1"},
+			reachWalk: true,
+		},
 	} {
 		for _, mode := range []string{"", "multi_ack", "multi_ack_detailed"} {
 			t.Run(mode+"/"+tc.name, func(t *testing.T) {
@@ -316,6 +346,105 @@ func TestUploadPackV1NegotiationOnSkewedHistoryMatchesCanonical(t *testing.T) {
 			})
 		}
 	}
+}
+
+// TestUploadPackV1NegotiationWithTagWantsMatchesCanonical checks how wants
+// that are annotated tags count towards readiness. Upstream walks from the
+// commit a tag peels to, in the order of that commit's date: W2 is only
+// found to reach the common history because the older W1, wanted through a
+// tag, is walked first. A tag of a blob asks for no history, and a tag of
+// the unrelated Z holds readiness back as Z itself would.
+func TestUploadPackV1NegotiationWithTagWantsMatchesCanonical(t *testing.T) {
+	t.Parallel()
+	requireReachWalk(t)
+
+	for _, tc := range []struct {
+		name  string
+		wants []string
+		ready bool
+	}{
+		{name: "child alone", wants: []string{"W2"}},
+		{name: "child, then tag of its parent", wants: []string{"W2", "tag:W1"}, ready: true},
+		{name: "child, then tag of a tag of its parent", wants: []string{"W2", "tag:tag:W1"}, ready: true},
+		{name: "commit and tag of a blob", wants: []string{"W1", "tag:blob"}, ready: true},
+		{name: "commit and tag of an unrelated commit", wants: []string{"W1", "tag:Z"}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			r := newCanonicalRepo(t)
+			r.commit("A")
+			r.commit("W1", "A")
+			r.commit("W2", "W1")
+			r.commit("Z")
+			r.commit("Cm", "A")
+			tag := func(name, target string, typ plumbing.ObjectType) {
+				tag := &object.Tag{Name: "t", Tagger: object.Signature{Name: "t", Email: "t@t"}, Target: r.commits[target], TargetType: typ}
+				o := r.st.NewEncodedObject()
+				require.NoError(t, tag.Encode(o))
+				h, err := r.st.SetEncodedObject(o)
+				require.NoError(t, err)
+				r.commits[name] = h
+			}
+			r.commits["blob"] = r.files[r.commits["A"]]["A"]
+			tag("tag:W1", "W1", plumbing.CommitObject)
+			tag("tag:tag:W1", "tag:W1", plumbing.TagObject)
+			tag("tag:Z", "Z", plumbing.CommitObject)
+			tag("tag:blob", "blob", plumbing.BlobObject)
+			for i, n := range tc.wants {
+				r.branch(fmt.Sprintf("want-%d", i), n)
+			}
+
+			canonical, got := negotiate(t, r, "multi_ack_detailed", tc.wants, nil, 0, []string{"Cm", "u1"}, false)
+			require.Equal(t, canonical, got)
+			want := []string{"ACK " + r.commits["Cm"].String() + " common"}
+			if tc.ready {
+				want = append(want, "ACK 0123456789abcdef0123456789abcdef01234567 ready")
+			}
+			require.Equal(t, append(want, "NAK"), got)
+		})
+	}
+}
+
+// TestUploadPackV1NegotiationIgnoresCommitGraph records a known difference
+// from git. The readiness check orders and bounds its walk by committer
+// date. git does the same in a repository without a commit-graph file, but
+// with one it can answer differently on a history whose dates run against
+// its parent links: here the tip C2 is the oldest commit, and git 2.54
+// answers "ready" once the file exists while it does not without it. go-git
+// does not consult the commit-graph when negotiating, so its answer is the
+// same in both cases. The difference only moves the round in which "ready"
+// is sent; the fetch itself is unaffected.
+func TestUploadPackV1NegotiationIgnoresCommitGraph(t *testing.T) {
+	t.Parallel()
+	requireReachWalk(t)
+
+	r := newCanonicalRepo(t)
+	base := r.when
+	at := func(minutes int, name string, parents ...string) {
+		r.when = base.Add(time.Duration(minutes) * time.Minute)
+		r.commit(name, parents...)
+		r.branch(strings.ToLower(name), name)
+	}
+	at(6, "C0")
+	at(4, "C1", "C0")
+	at(2, "C2", "C1")
+	wants, haves := []string{"C0", "C1", "C2"}, []string{"C0"}
+
+	canonical, withoutGraph := negotiate(t, r, "multi_ack_detailed", wants, nil, 0, haves, false)
+	require.Equal(t, canonical, withoutGraph)
+	require.NotContains(t, strings.Join(withoutGraph, "\n"), " ready")
+
+	out, err := gitenv.Command("git", "-C", r.dir, "commit-graph", "write", "--reachable").CombinedOutput()
+	require.NoError(t, err, string(out))
+
+	canonical, withGraph := negotiate(t, r, "multi_ack_detailed", wants, nil, 0, haves, false)
+	require.Equal(t, withoutGraph, withGraph, "go-git must not depend on the commit-graph file")
+
+	// Only checked against the git version this was observed with; older
+	// ones are free to agree with go-git.
+	requireGitAtLeast(t, 2, 54, "the commit-graph answer this test records")
+	require.Contains(t, strings.Join(canonical, "\n"), " ready",
+		"git no longer answers ready here with a commit-graph; update this test and the note on okToGiveUp")
 }
 
 // shallowServerHistory builds a repository that is itself shallow:
@@ -614,7 +743,7 @@ func TestCommonHavesLooksUpTheTypeOfABlobHave(t *testing.T) {
 	assert.True(t, had)
 }
 
-// A have that is already in theyHave, as an earlier have's parent, can
+// A have that is already in clientHas, as an earlier have's parent, can
 // still bring new parents, and so change readiness without moving the
 // cutoff. The answer okToGiveUp gave before must not be reused.
 func TestCommonHavesWalksAgainForNewParentsOfAKnownHave(t *testing.T) {

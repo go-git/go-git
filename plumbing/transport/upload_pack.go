@@ -113,7 +113,7 @@ func UploadPack(
 	var haves []plumbing.Hash
 	var upreq *packp.UploadRequest
 	var common *commonHaves
-	var anyMultiAck, multiAckDetailed bool
+	var mode ackMode
 	var caps capability.List
 	var wants []plumbing.Hash
 	var plan *shallowPlan
@@ -138,9 +138,12 @@ func UploadPack(
 				return fmt.Errorf("closing reader: %w", err)
 			}
 
-			multiAckDetailed = caps.Supports(capability.MultiACKDetailed)
-			// Either form, where upstream tests data->multi_ack.
-			anyMultiAck = multiAckDetailed || caps.Supports(capability.MultiACK)
+			switch {
+			case caps.Supports(capability.MultiACKDetailed):
+				mode = ackMultiDetailed
+			case caps.Supports(capability.MultiACK):
+				mode = ackMulti
+			}
 
 			// TODO: support deepen-since, and deepen-not
 			if !upreq.Depth.DeepenSince.IsZero() || len(upreq.Depth.DeepenNot) > 0 {
@@ -154,11 +157,12 @@ func UploadPack(
 				return fmt.Errorf("planning shallow fetch: %w", err)
 			}
 
-			// Before negotiation starts, upstream send_unshallow adds the
-			// parents of unshallowed commits to want_obj, so ok_to_give_up
-			// requires them to reach a common commit too, and the client's
-			// shallow commits and the new boundary are registered as
-			// shallow, so neither walk goes past them.
+			// A commit that stops being shallow has its history sent down
+			// to the new boundary, so its parents are negotiated like wants:
+			// they too must reach a common commit before the server says it
+			// knows enough. The client's shallow commits and the new
+			// boundary end every walk, as nothing beyond them is had or
+			// sent.
 			negotiated := wants
 			var grafts []plumbing.Hash
 			if plan != nil {
@@ -170,8 +174,8 @@ func UploadPack(
 				return err
 			}
 
-			// Upstream follows a deepen with the shallow update and a flush
-			// even when both lists are empty (receive_needs).
+			// A deepen request is always answered with a shallow update,
+			// which is just its flush when there is nothing to announce.
 			if plan != nil && plan.deepened {
 				shupd := packp.ShallowUpdate{Shallows: plan.shallows, Unshallows: plan.unshallows}
 				if err := shupd.Encode(w); err != nil {
@@ -181,8 +185,8 @@ func UploadPack(
 
 			// A stateless client may end its first request here, having
 			// asked only for the shallow list, and sends its haves in the
-			// next. It is owed neither acknowledgments nor a pack: upstream
-			// upload_pack peeks with PACKET_READ_GENTLE_ON_EOF and stops.
+			// next. It is owed neither acknowledgments nor a pack, so the
+			// end of input here ends the request without an error.
 			if opts.StatelessRPC {
 				if _, _, err := pktline.PeekLine(rd); errors.Is(err, io.EOF) {
 					return w.Close()
@@ -190,9 +194,10 @@ func UploadPack(
 			}
 		}
 
-		// UploadHaves.Decode takes EOF for a flush. Upstream dies when a
-		// stateful client hangs up mid-negotiation, so do the same instead of
-		// looping on empty rounds.
+		// UploadHaves.Decode takes EOF for a flush. A stateful client that
+		// hangs up mid-negotiation has not finished its request, so report
+		// the truncated stream instead of looping on empty rounds. Git's
+		// server ends with an error here too.
 		if !opts.StatelessRPC {
 			if _, _, err := pktline.PeekLine(rd); errors.Is(err, io.EOF) {
 				return fmt.Errorf("decoding upload-haves: %w", io.ErrUnexpectedEOF)
@@ -211,72 +216,9 @@ func UploadPack(
 		haves = append(haves, uphav.Haves...)
 		done = uphav.Done
 
-		// Acknowledge the haves as upstream get_common_commits does: a have is
-		// common when the server has it, and "ready" is only promised once
-		// every want reaches a common have (ok_to_give_up).
-		var resps []packp.ServerResponse
-		ack := func(a packp.ACK) {
-			resps = append(resps, packp.ServerResponse{ACKs: []packp.ACK{a}})
-		}
-		nak := func() { resps = append(resps, packp.ServerResponse{}) }
-		gotCommon, gotOther := false, false
-		for _, h := range uphav.Haves {
-			if err := ctx.Err(); err != nil {
-				return err
-			}
-			ok, err := common.add(h)
-			if err != nil {
-				return fmt.Errorf("checking have %s: %w", h, err)
-			}
-			if !ok {
-				gotOther = true
-				if anyMultiAck {
-					ready, err := common.okToGiveUp(ctx)
-					if err != nil {
-						return fmt.Errorf("checking negotiation: %w", err)
-					}
-					if ready {
-						status := packp.ACKContinue
-						if multiAckDetailed {
-							status = packp.ACKReady
-						}
-						ack(packp.ACK{Hash: h, Status: status})
-					}
-				}
-				continue
-			}
-
-			gotCommon = true
-			switch {
-			case multiAckDetailed:
-				ack(packp.ACK{Hash: h, Status: packp.ACKCommon})
-			case anyMultiAck:
-				ack(packp.ACK{Hash: h, Status: packp.ACKContinue})
-			case len(common.counted) == 1:
-				ack(packp.ACK{Hash: h})
-			}
-		}
-
-		if done {
-			switch {
-			case len(common.counted) == 0:
-				nak()
-			case anyMultiAck:
-				ack(packp.ACK{Hash: common.last})
-			}
-		} else {
-			if multiAckDetailed && gotCommon && !gotOther {
-				ready, err := common.okToGiveUp(ctx)
-				if err != nil {
-					return fmt.Errorf("checking negotiation: %w", err)
-				}
-				if ready {
-					ack(packp.ACK{Hash: common.last, Status: packp.ACKReady})
-				}
-			}
-			if len(common.counted) == 0 || anyMultiAck {
-				nak()
-			}
+		resps, err := acknowledgeHaves(ctx, common, mode, uphav.Haves, done)
+		if err != nil {
+			return err
 		}
 
 		for _, resp := range resps {
@@ -348,18 +290,137 @@ func UploadPack(
 	return nil
 }
 
+// ackMode is the way a client asked to have its haves acknowledged, by the
+// capability it sent with its first want.
+type ackMode int
+
+const (
+	// ackSingle is the original protocol: the server acknowledges the
+	// first have it shares with the client and nothing after it.
+	ackSingle ackMode = iota
+	// ackMulti is multi_ack: every shared have is acknowledged with
+	// "continue".
+	ackMulti
+	// ackMultiDetailed is multi_ack_detailed: a shared have is
+	// acknowledged with "common", and "ready" tells the client that the
+	// server knows enough to build a pack.
+	ackMultiDetailed
+)
+
+// acknowledgeHaves answers one round of a v0 negotiation. It records haves,
+// the haves the client sent in this round, in common, and returns the lines
+// to send back in order. done says whether the round ended with "done"
+// rather than a flush.
+//
+// A have the server shares is acknowledged at once, in the form mode asks
+// for. A have the server lacks is only answered once the server could stop
+// negotiating, to tell a multi_ack client that it need not walk further
+// down that line of history.
+func acknowledgeHaves(
+	ctx context.Context,
+	common *commonHaves,
+	mode ackMode,
+	haves []plumbing.Hash,
+	done bool,
+) ([]packp.ServerResponse, error) {
+	var resps []packp.ServerResponse
+	ack := func(h plumbing.Hash, status packp.ACKStatus) {
+		resps = append(resps, packp.ServerResponse{ACKs: []packp.ACK{{Hash: h, Status: status}}})
+	}
+	nak := func() { resps = append(resps, packp.ServerResponse{}) }
+	knowsEnough := func() (bool, error) {
+		enough, err := common.okToGiveUp(ctx)
+		if err != nil {
+			return false, fmt.Errorf("checking negotiation: %w", err)
+		}
+		return enough, nil
+	}
+
+	sharedInRound, lackedInRound := false, false
+	for _, h := range haves {
+		if err := ctx.Err(); err != nil {
+			return nil, err
+		}
+		shared, err := common.add(h)
+		if err != nil {
+			return nil, fmt.Errorf("checking have %s: %w", h, err)
+		}
+
+		if shared {
+			sharedInRound = true
+			switch {
+			case mode == ackMultiDetailed:
+				ack(h, packp.ACKCommon)
+			case mode == ackMulti:
+				ack(h, packp.ACKContinue)
+			case len(common.counted) == 1:
+				ack(h, 0)
+			}
+			continue
+		}
+
+		lackedInRound = true
+		if mode == ackSingle {
+			continue
+		}
+		enough, err := knowsEnough()
+		if err != nil {
+			return nil, err
+		}
+		if enough {
+			status := packp.ACKContinue
+			if mode == ackMultiDetailed {
+				status = packp.ACKReady
+			}
+			ack(h, status)
+		}
+	}
+
+	nothingShared := len(common.counted) == 0
+	if done {
+		// The reply to "done" is the last line before the pack: a NAK when
+		// nothing is shared, and for a multi_ack client otherwise the
+		// latest shared have once more, without a status.
+		switch {
+		case nothingShared:
+			nak()
+		case mode != ackSingle:
+			ack(common.last, 0)
+		}
+		return resps, nil
+	}
+
+	// A round in which every have was shared has not said "ready" yet,
+	// since that is only attached to a have the server lacks.
+	if mode == ackMultiDetailed && sharedInRound && !lackedInRound {
+		enough, err := knowsEnough()
+		if err != nil {
+			return nil, err
+		}
+		if enough {
+			ack(common.last, packp.ACKReady)
+		}
+	}
+	// A flush is answered with a NAK, except that the original protocol
+	// stays silent once it has sent its one acknowledgement.
+	if nothingShared || mode != ackSingle {
+		nak()
+	}
+	return resps, nil
+}
+
 func objectsToUpload(st storage.Storer, wants, haves []plumbing.Hash) ([]plumbing.Hash, error) {
 	return revlist.Objects(st, wants, haves)
 }
 
-// getShallowCommits returns the shallow boundary of a fetch limited to depth
+// boundaryAtDepth returns the shallow boundary of a fetch limited to depth
 // commits: the commits whose shortest distance from heads is exactly depth (a
-// head is at depth 1), following every parent. It mirrors upstream
-// get_shallows_or_depth (shallow.c), the walk behind get_shallow_commits.
-// Heads that do not peel to a commit are skipped, and an infinite depth
-// (infiniteDepth or more) has no boundary.
-func getShallowCommits(ctx context.Context, st storage.Storer, heads []plumbing.Hash, depth int) ([]plumbing.Hash, error) {
-	if depth >= infiniteDepth {
+// head is at depth 1), following every parent. These are the commits the
+// client receives without their parents. Heads that do not peel to a commit
+// are skipped, and an unlimited depth (unlimitedDepth or more) has no
+// boundary.
+func boundaryAtDepth(ctx context.Context, st storage.Storer, heads []plumbing.Hash, depth int) ([]plumbing.Hash, error) {
+	if depth >= unlimitedDepth {
 		return nil, nil
 	}
 
@@ -408,58 +469,67 @@ func getShallowCommits(ctx context.Context, st storage.Storer, heads []plumbing.
 	return nil, nil
 }
 
-// shallowFrontierDepth returns the depth, counted from the wants (a tip is at
+// clientBoundaryDepth returns the depth, counted from the wants (a tip is at
 // depth 1), of the closest commit in the client's shallow set, or 0 if none is
-// reachable. It mirrors upstream get_shallows_depth (shallow.c): the value
-// offsets a deepen-relative request so the new depth is measured from the
-// client's existing shallow boundary rather than from the tips.
-func shallowFrontierDepth(ctx context.Context, st storage.Storer, heads, shallows []plumbing.Hash) (int, error) {
+// reachable. A deepen-relative request adds its depth to this value, so that
+// the new depth is measured from the client's existing shallow boundary
+// rather than from the tips.
+func clientBoundaryDepth(ctx context.Context, st storage.Storer, heads, shallows []plumbing.Hash) (int, error) {
+	if len(shallows) == 0 {
+		return 0, nil
+	}
 	shallowSet := make(map[plumbing.Hash]struct{}, len(shallows))
 	for _, h := range shallows {
 		shallowSet[h] = struct{}{}
 	}
 
-	best := 0
-	seen := map[plumbing.Hash]int{}
-	type frame struct {
-		hash  plumbing.Hash
-		depth int // depth of this commit's predecessor; the commit sits at depth+1
-	}
-	var stack []frame
+	// Walking breadth-first reaches every commit first at its shortest
+	// depth, so the first level that holds a client shallow commit is the
+	// answer and nothing beyond it is read.
+	visited := make(map[plumbing.Hash]struct{})
+	var level []plumbing.Hash
 	for _, h := range heads {
-		if c, ok := peelToCommit(st, h); ok {
-			stack = append(stack, frame{c.Hash, 0})
+		c, ok := peelToCommit(st, h)
+		if !ok {
+			continue
 		}
+		if _, ok := visited[c.Hash]; ok {
+			continue
+		}
+		visited[c.Hash] = struct{}{}
+		level = append(level, c.Hash)
 	}
-	for len(stack) > 0 {
+
+	// next is the level being built; the two slices swap after each level.
+	var next []plumbing.Hash
+	for d := 1; len(level) > 0; d++ {
 		if err := ctx.Err(); err != nil {
 			return 0, err
 		}
-		f := stack[len(stack)-1]
-		stack = stack[:len(stack)-1]
-		if d, ok := seen[f.hash]; ok && d <= f.depth {
-			continue
-		}
-		seen[f.hash] = f.depth
-
-		cur := f.depth + 1
-		if _, ok := shallowSet[f.hash]; ok {
-			if best == 0 || cur < best {
-				best = cur
+		for _, h := range level {
+			if _, ok := shallowSet[h]; ok {
+				return d, nil
 			}
-			// A client shallow commit is a normal commit on the server, so the
-			// walk continues past it, matching upstream get_shallows_or_depth.
 		}
 
-		c, err := object.GetCommit(st, f.hash)
-		if err != nil {
-			continue
+		next = next[:0]
+		for _, h := range level {
+			// A commit that cannot be read ends its line of history.
+			c, err := object.GetCommit(st, h)
+			if err != nil {
+				continue
+			}
+			for _, p := range c.ParentHashes {
+				if _, ok := visited[p]; ok {
+					continue
+				}
+				visited[p] = struct{}{}
+				next = append(next, p)
+			}
 		}
-		for _, p := range c.ParentHashes {
-			stack = append(stack, frame{p, cur})
-		}
+		level, next = next, level
 	}
-	return best, nil
+	return 0, nil
 }
 
 // serveUploadPackV2 handles the git protocol v2 for upload-pack (fetch/ls-refs).
@@ -529,8 +599,8 @@ func serveUploadPackV2(ctx context.Context, st storage.Storer, rd *bufio.Reader,
 // The reference lines are encoded by writeV2Ref rather than packp.LsRefsOutput:
 // a v2 HEAD line carries both a resolved object id and a symref-target
 // attribute, which a single plumbing.Reference (hash XOR symbolic) cannot
-// represent. writeV2Ref resolves the symref's hash from the storer, matching
-// upstream git's send_ref.
+// represent. writeV2Ref resolves the symref's hash from the storer, so the
+// line names the object the symref currently points at.
 func serveLsRefsV2(_ context.Context, st storage.Storer, w io.Writer, args *packp.LsRefsArgs) error {
 	iter, err := st.IterReferences()
 	if err != nil {
@@ -554,9 +624,10 @@ func serveLsRefsV2(_ context.Context, st storage.Storer, w io.Writer, args *pack
 
 	prefixes := args.RefPrefixes
 
-	// HEAD is emitted first, but only when it passes the ref-prefix filter,
-	// matching upstream's send_possibly_unborn_head -> send_ref (ls-refs.c),
-	// where HEAD is subject to ref_match like every other ref.
+	// HEAD is listed first, but only when it passes the ref-prefix filter:
+	// a client that sends prefixes gets HEAD when one of them matches
+	// "HEAD", like every other ref. Git's server filters HEAD the same
+	// way.
 	for _, r := range refs {
 		if r.Name() == plumbing.HEAD {
 			if len(prefixes) == 0 || refMatchesAnyPrefix(r.Name().String(), prefixes) {
@@ -592,8 +663,11 @@ func refMatchesAnyPrefix(name string, prefixes []string) bool {
 	return false
 }
 
-// writeV2Ref writes an ls-refs response with the requested reference attributes.
-// See https://github.com/git/git/blob/1630431f326e15fcde608827b5ff38422528eb59/ls-refs.c#L91-L117.
+// writeV2Ref writes one line of an ls-refs response for r, with the
+// attributes the client asked for. A symbolic reference is listed with the
+// object id of the reference it resolves to; one that cannot be resolved, or
+// that resolves to no object, is left out.
+// See https://git-scm.com/docs/gitprotocol-v2#_ls_refs.
 func writeV2Ref(w io.Writer, st storage.Storer, r *plumbing.Reference, symrefs, peel bool) error {
 	var hash plumbing.Hash
 	var target string
@@ -616,18 +690,20 @@ func writeV2Ref(w io.Writer, st storage.Storer, r *plumbing.Reference, symrefs, 
 	// Protocol v2 ls-refs grammar:
 	//   ref = obj-id SP refname *(SP ref-attribute) LF
 	//   ref-attribute = (symref | peeled)
-	// Both symref-target and peeled are attributes on the ref's own line
-	// (symref-target first, matching upstream's send_ref ordering), not
-	// separate lines as in the v0/v1 advertisement format.
+	// Both symref-target and peeled are attributes on the ref's own line,
+	// not separate lines as in the v0/v1 advertisement format. The grammar
+	// allows either order; symref-target is written first, as Git's server
+	// writes it.
 	line := fmt.Sprintf("%s %s", hash, r.Name())
 	if symrefs && target != "" && advertisable(plumbing.ReferenceName(target)) {
 		line += " symref-target:" + target
 	}
 	if peel {
-		// Peel any ref whose object is (a chain of) annotated tags, not just
-		// refs/tags/*, and resolve all the way to the underlying non-tag object
-		// — matching upstream's reference_get_peeled_oid (ls-refs.c). Lightweight
-		// tags and branches don't point at tag objects, so they emit no attribute.
+		// Peel any ref whose object is an annotated tag, or a chain of
+		// them, down to the first object that is not a tag; the ref need
+		// not be under refs/tags/. Branches and lightweight tags do not
+		// point at tag objects, so they get no attribute. Git's server
+		// answers the same way.
 		if peeled, ok := peelToNonTag(st, hash); ok {
 			line += " peeled:" + peeled.String()
 		}
@@ -639,9 +715,10 @@ func writeV2Ref(w io.Writer, st storage.Storer, r *plumbing.Reference, symrefs, 
 }
 
 // peelToNonTag follows annotated-tag objects from h down to the first non-tag
-// object, mirroring upstream's reference_get_peeled_oid. It returns the peeled
-// hash and true when h points at one or more tag objects; false when h is not a
-// tag (a lightweight tag, branch, etc.) so no "peeled" attribute is emitted.
+// object, which is what a "peeled" attribute reports. It returns the peeled
+// hash and true when h points at one or more tag objects; false when h is not
+// a tag object, as for a branch or a lightweight tag, so that no "peeled"
+// attribute is emitted.
 func peelToNonTag(st storage.Storer, h plumbing.Hash) (plumbing.Hash, bool) {
 	tag, err := object.GetTag(st, h)
 	if err != nil {
@@ -651,8 +728,8 @@ func peelToNonTag(st storage.Storer, h plumbing.Hash) (plumbing.Hash, bool) {
 		next := tag.Target
 		inner, err := object.GetTag(st, next)
 		if err != nil {
-			// next is a non-tag object (or missing); return it as the peeled
-			// value, as upstream's peel does.
+			// next is not a tag object, or the server lacks it. Either
+			// way the chain of tags ends here and next is the peeled value.
 			return next, true
 		}
 		tag = inner
@@ -675,17 +752,18 @@ func serveFetchV2(ctx context.Context, st storage.Storer, w io.WriteCloser, args
 	haves := args.Haves
 	done := args.Done
 
-	// fetch=filter is not advertised. Upstream rejects the argument as an
-	// unexpected line before acting on any other, so do the same rather than
-	// send a pack the client takes for a filtered one.
+	// The filter feature of fetch is not advertised, so a client may not
+	// send a filter argument. Refuse it before acting on any other
+	// argument, rather than send a complete pack that the client takes for
+	// a filtered one. Git's server refuses it the same way.
 	if args.Filter != "" {
 		_ = w.Close()
 		return true, fmt.Errorf("%w: %q", ErrFilterNotSupported, args.Filter)
 	}
 
-	// No 'want' lines: the client guessed it didn't want anything. Upstream
-	// emits no response at all here (upload-pack.c, UPLOAD_DONE), so write
-	// nothing and just close the stream, no stray flush packet.
+	// No want lines: the client found it needs nothing. There is nothing
+	// to answer, so close the stream without writing anything, not even a
+	// flush packet. Git's server sends no response here either.
 	if len(wants) == 0 {
 		return true, w.Close()
 	}
@@ -699,16 +777,18 @@ func serveFetchV2(ctx context.Context, st storage.Storer, w io.WriteCloser, args
 	//   - haves and !done -> emit an acknowledgments section. ACK every common
 	//                        have not already implied by an earlier one.
 	//                        "ready" is sent only once every want reaches a
-	//                        common have or a parent of one (upstream's
-	//                        ok_to_give_up); then the packfile follows in the
+	//                        common have or a parent of one (see
+	//                        okToGiveUp); then the packfile follows in the
 	//                        same response. Otherwise the section ends without a
 	//                        packfile and the client negotiates again with more
 	//                        haves (NAK when there is no common object at all).
 	if !done && len(haves) > 0 {
-		// Unlike v0/v1, upstream negotiates before send_shallow_info adds the
-		// parents of unshallowed commits to the wants and registers the
-		// client's shallow commits, so neither applies here. The server's
-		// own shallow commits do, and newCommonHaves reads them.
+		// The acknowledgments of a v2 fetch are decided before its shallow
+		// request is worked out, where v0/v1 send the shallow update first.
+		// So the parents of unshallowed commits are not negotiated as wants
+		// here, and the client's shallow commits do not end the walks. The
+		// server's own shallow commits do, and newCommonHaves reads them.
+		// Git's server negotiates a v2 fetch in the same order.
 		common, err := newCommonHaves(st, wants, nil)
 		if err != nil {
 			_ = w.Close()
@@ -726,12 +806,12 @@ func serveFetchV2(ctx context.Context, st storage.Storer, w io.WriteCloser, args
 		}
 		out.Acknowledgments = &packp.Acknowledgments{ACKs: common.counted}
 
-		// "ready" is withheld until every want reaches a common have
-		// (upstream's ok_to_give_up). Declaring it on the first common
-		// have would force single-round negotiation and a larger pack. When not
-		// ready (including no common object at all, which encodes as NAK), the
-		// acknowledgments section stands alone and the client refines its haves
-		// in the next request.
+		// "ready" is withheld until every want reaches a common have (see
+		// okToGiveUp). Declaring it on the first common have would force
+		// single-round negotiation and a larger pack. When not ready
+		// (including no common object at all, which encodes as NAK), the
+		// acknowledgments section stands alone and the client refines its
+		// haves in the next request.
 		ready, err := common.okToGiveUp(ctx)
 		if err != nil {
 			_ = w.Close()
@@ -769,9 +849,9 @@ func serveFetchV2(ctx context.Context, st storage.Storer, w io.WriteCloser, args
 		_ = w.Close()
 		return true, fmt.Errorf("planning shallow fetch: %w", err)
 	}
-	// Upstream send_shallow_info writes the section, even when empty, when
-	// there is a deepen request or a client shallow line. Serving from a
-	// shallow repository is not handled.
+	// The shallow-info section is written, even when empty, whenever the
+	// client asks to deepen or sends a shallow line, as Git's server does.
+	// Serving from a shallow repository is not handled.
 	if plan != nil {
 		out.ShallowInfo = &packp.ShallowInfo{Shallows: plan.shallows, Unshallows: plan.unshallows}
 	}
@@ -782,8 +862,9 @@ func serveFetchV2(ctx context.Context, st storage.Storer, w io.WriteCloser, args
 		return true, fmt.Errorf("getting objects to upload: %w", err)
 	}
 
-	// include-tag: add annotated tags whose target is in the pack (auto-tag
-	// following), mirroring upstream pack-objects --include-tag.
+	// include-tag: also pack the annotated tags that point at an object in
+	// the pack, so that the client gets the tags of the history it fetches
+	// without asking again.
 	if args.IncludeTag {
 		objs, err = includeReachableTags(st, objs)
 		if err != nil {
@@ -826,8 +907,10 @@ func serveFetchV2(ctx context.Context, st storage.Storer, w io.WriteCloser, args
 	return true, w.Close()
 }
 
-// infiniteDepth is git's INFINITE_DEPTH, the depth that --unshallow requests.
-const infiniteDepth = 0x7fffffff
+// unlimitedDepth is the depth a client sends to ask for complete history, as
+// git fetch --unshallow does: the largest value a 32-bit signed depth holds.
+// A request for that depth or more has no shallow boundary.
+const unlimitedDepth = 0x7fffffff
 
 // shallowRequest is the shallow part of a fetch request; v0/v1 and v2 requests
 // both map onto it.
@@ -860,39 +943,50 @@ type shallowPlan struct {
 }
 
 // planShallow computes the shallow boundary, the unshallowed commits and the
-// object-walk grafts for a fetch of wants, mirroring upstream
-// send_shallow_list, deepen and send_unshallow (upload-pack.c). It returns a
-// nil plan when the client neither is shallow nor asks to deepen, and an
-// error when deepen is combined with deepen-since or deepen-not. The walks
-// stop with ctx's error once ctx is done.
+// object-walk grafts for a fetch of wants. A request takes one of three
+// shapes: shallow lines alone, from a shallow client that does not deepen;
+// a boundary by date or exclusion (deepen-since, deepen-not); or a boundary
+// at a depth, which deepen-relative counts from the client's own boundary.
+//
+// It returns a nil plan when the client neither is shallow nor asks to
+// deepen, and an error when deepen is combined with deepen-since or
+// deepen-not. The walks stop with ctx's error once ctx is done.
 func planShallow(ctx context.Context, st storage.Storer, wants []plumbing.Hash, req shallowRequest) (*shallowPlan, error) {
 	var err error
 	if req.clientShallows, err = knownClientShallows(st, req.clientShallows); err != nil {
 		return nil, err
 	}
-	revList := !req.since.IsZero() || len(req.notTips) > 0
-	if req.depth > 0 && revList {
-		return nil, errors.New("deepen and deepen-since (or deepen-not) cannot be used together")
+	byDepth := req.depth > 0
+	byDateOrExclusion := !req.since.IsZero() || len(req.notTips) > 0
+	if byDepth && byDateOrExclusion {
+		return nil, packp.ErrDeepenMutuallyExclusive
 	}
-	if req.depth <= 0 && !revList && len(req.clientShallows) == 0 {
+	if !byDepth && !byDateOrExclusion && len(req.clientShallows) == 0 {
 		return nil, nil
 	}
 
 	plan := &shallowPlan{grafts: req.clientShallows}
+	// selected is the set of commits a date or exclusion request picks.
+	var selected map[plumbing.Hash]struct{}
 	switch {
-	case revList:
-		plan.shallows, err = getShallowCommitsByRevList(ctx, st, wants, req.since, req.notTips)
-	case req.depth > 0:
+	case !byDepth && !byDateOrExclusion:
+		// Shallow lines without a deepen: the client's boundary only bounds
+		// what it has.
+		return plan, nil
+	case byDateOrExclusion:
+		plan.shallows, selected, err = boundaryByDateOrExclusion(ctx, st, wants, req.since, req.notTips)
+	default:
 		depth := req.depth
-		if depth >= infiniteDepth && len(req.clientShallows) > 0 {
+		if depth >= unlimitedDepth && len(req.clientShallows) > 0 {
 			shallows, serr := st.Shallow()
 			if serr != nil {
 				return nil, fmt.Errorf("reading shallow commits: %w", serr)
 			}
 			if len(shallows) == 0 {
-				// Upstream deepen (upload-pack.c): an infinite deepen from a
-				// complete repository unshallows every client shallow commit,
-				// reachable from the wants or not.
+				// A complete repository answers a request for unlimited
+				// depth by unshallowing every shallow commit the client
+				// named, reachable from the wants or not, as Git's server
+				// does.
 				plan.deepened = true
 				for _, h := range req.clientShallows {
 					if err := ctx.Err(); err != nil {
@@ -910,31 +1004,31 @@ func planShallow(ctx context.Context, st storage.Storer, wants []plumbing.Hash, 
 		}
 		if req.relative && len(req.clientShallows) > 0 {
 			// deepen-relative counts from the client's boundary: offset the
-			// depth by that boundary's distance from the wants, as upstream
-			// get_shallow_commits does.
-			cur, ferr := shallowFrontierDepth(ctx, st, wants, req.clientShallows)
+			// depth by that boundary's distance from the wants.
+			cur, ferr := clientBoundaryDepth(ctx, st, wants, req.clientShallows)
 			if ferr != nil {
 				return nil, fmt.Errorf("computing shallow frontier depth: %w", ferr)
 			}
 			if cur == 0 {
 				// No client shallow commit is reachable from the wants, so
-				// upstream leaves the client's view unchanged.
+				// there is no boundary to count from and the client's view
+				// stays as it is.
 				return plan, nil
 			}
 			depth += cur
 		}
-		plan.shallows, err = getShallowCommits(ctx, st, wants, depth)
-	default:
-		// Shallow lines without a deepen: the client's boundary only bounds
-		// what it has.
-		return plan, nil
+		plan.shallows, err = boundaryAtDepth(ctx, st, wants, depth)
 	}
 	if err != nil {
 		return nil, fmt.Errorf("computing shallow commits: %w", err)
 	}
 
 	plan.deepened = true
-	plan.unshallows, plan.extraWants, err = unshallowedCommits(ctx, st, wants, req.clientShallows, plan.shallows)
+	if byDateOrExclusion {
+		plan.unshallows, plan.extraWants, err = selectedClientShallows(st, req.clientShallows, selected, plan.shallows)
+	} else {
+		plan.unshallows, plan.extraWants, err = commitsNoLongerShallow(ctx, st, wants, req.clientShallows, plan.shallows)
+	}
 	if err != nil {
 		return nil, fmt.Errorf("computing unshallowed commits: %w", err)
 	}
@@ -943,8 +1037,8 @@ func planShallow(ctx context.Context, st storage.Storer, wants []plumbing.Hash, 
 	for _, h := range req.clientShallows {
 		clientShallows[h] = struct{}{}
 	}
-	// The client already records its own shallow commits; upstream
-	// send_shallow skips those flagged CLIENT_SHALLOW.
+	// The client already records its own shallow commits, so only the
+	// ones new to it are announced.
 	plan.shallows = slices.DeleteFunc(plan.shallows, func(h plumbing.Hash) bool {
 		_, ok := clientShallows[h]
 		return ok
@@ -953,9 +1047,9 @@ func planShallow(ctx context.Context, st storage.Storer, wants []plumbing.Hash, 
 }
 
 // knownClientShallows returns the client's shallow commits that st has, each
-// once, mirroring upstream process_shallow (upload-pack.c): a shallow line
-// naming an object the server does not have is ignored, a repeated one is
-// collapsed, and one naming an object that is not a commit is an error.
+// once. A shallow line naming an object the server does not have is ignored,
+// since no walk here can reach it; a repeated one is collapsed; and one
+// naming an object that is not a commit is an error.
 func knownClientShallows(st storage.Storer, shallows []plumbing.Hash) ([]plumbing.Hash, error) {
 	if len(shallows) == 0 {
 		return shallows, nil
@@ -993,11 +1087,11 @@ func (p *shallowPlan) objects(st storage.Storer, wants, haves []plumbing.Hash) (
 	return revlist.ObjectsWithShallows(st, wants, haves, p.grafts)
 }
 
-// unshallowedCommits returns the client's shallow commits that a deepen to
-// boundary makes interior, and their parents. Mirrors upstream send_unshallow
-// (upload-pack.c): such a commit is reachable from the wants without crossing
-// the boundary, and is not on it.
-func unshallowedCommits(ctx context.Context, st storage.Storer, wants, clientShallows, boundary []plumbing.Hash) (unshallows, parents []plumbing.Hash, err error) {
+// commitsNoLongerShallow returns the client's shallow commits that a deepen
+// to boundary makes interior, and their parents. Such a commit is reachable
+// from the wants without crossing the boundary, and is not on it; the client
+// is told to unshallow it and is sent its parents.
+func commitsNoLongerShallow(ctx context.Context, st storage.Storer, wants, clientShallows, boundary []plumbing.Hash) (unshallows, parents []plumbing.Hash, err error) {
 	if len(clientShallows) == 0 {
 		return nil, nil, nil
 	}
@@ -1050,9 +1144,14 @@ func unshallowedCommits(ctx context.Context, st storage.Storer, wants, clientSha
 	return unshallows, parents, nil
 }
 
-// resolveDeepenNot resolves each deepen-not argument (a ref name or an object
-// id) to a commit hash, peeling annotated tags, mirroring how upstream feeds
-// "--not <oid>" to rev-list (upload-pack.c send_shallow_list).
+// resolveDeepenNot resolves each deepen-not argument to the object it names,
+// peeling annotated tags. The history reachable from these objects is what
+// the shallow fetch leaves out.
+//
+// An argument is a ref name, full or short: it is looked up the way a
+// revision name is, as itself, under refs/, as a tag, as a branch and as a
+// remote-tracking branch. It has to name exactly one ref; a name that names
+// none, or several, is an error, and so is an object id, as on Git's server.
 func resolveDeepenNot(st storage.Storer, refs []string) ([]plumbing.Hash, error) {
 	if len(refs) == 0 {
 		return nil, nil
@@ -1060,15 +1159,20 @@ func resolveDeepenNot(st storage.Storer, refs []string) ([]plumbing.Hash, error)
 	out := make([]plumbing.Hash, 0, len(refs))
 	for _, r := range refs {
 		var h plumbing.Hash
-		if ref, err := storer.ResolveReference(st, plumbing.ReferenceName(r)); err == nil {
-			h = ref.Hash()
-		} else if oid, ok := plumbing.FromHex(r); ok {
-			if _, err := st.EncodedObject(plumbing.AnyObject, oid); err != nil {
-				return nil, fmt.Errorf("cannot resolve deepen-not %q", r)
+		found := 0
+		for _, rule := range plumbing.RefRevParseRules {
+			ref, err := storer.ResolveReference(st, plumbing.ReferenceName(fmt.Sprintf(rule, r)))
+			if err != nil {
+				continue
 			}
-			h = oid
-		} else {
+			h = ref.Hash()
+			found++
+		}
+		switch {
+		case found == 0:
 			return nil, fmt.Errorf("cannot resolve deepen-not %q", r)
+		case found > 1:
+			return nil, fmt.Errorf("deepen-not %q names more than one reference", r)
 		}
 		if peeled, ok := peelToNonTag(st, h); ok {
 			h = peeled
@@ -1102,28 +1206,37 @@ func reachableCommits(ctx context.Context, st storage.Storer, tips []plumbing.Ha
 	return seen, nil
 }
 
-// getShallowCommitsByRevList computes the shallow boundary for a deepen-since
-// and/or deepen-not request, mirroring upstream's deepen_by_rev_list
-// (upload-pack.c). The included set is every commit reachable from heads that is
-// not older than since (when set) and not reachable from any notTips (when set);
-// a commit in the set with a parent outside it is a shallow boundary.
+// boundaryByDateOrExclusion computes the shallow boundary for a deepen-since
+// and/or deepen-not request. The included set is every commit reachable from
+// heads that is not older than since (when set) and not reachable from any
+// notTips (when set); a commit in the set with a parent outside it is a
+// shallow boundary. The set is returned along with the boundary. A request
+// that selects no commit at all is refused with errNothingSelected, as Git's
+// server refuses it.
 //
-// Unlike git's rev-list traversal it does not apply the date "slop" used to
-// tolerate out-of-order committer timestamps, so under clock skew the boundary
-// may differ by a few commits; the resulting shallow clone is still valid.
-func getShallowCommitsByRevList(ctx context.Context, st storage.Storer, heads []plumbing.Hash, since time.Time, notTips []plumbing.Hash) ([]plumbing.Hash, error) {
+// The walk stops at the first commit older than since on each path. Git's
+// server looks a little further, to tolerate committer timestamps that are
+// out of order, so under clock skew the boundary may differ by a few
+// commits; the resulting shallow clone is still valid.
+func boundaryByDateOrExclusion(ctx context.Context, st storage.Storer, heads []plumbing.Hash, since time.Time, notTips []plumbing.Hash) (shallows []plumbing.Hash, included map[plumbing.Hash]struct{}, err error) {
 	exclude, err := reachableCommits(ctx, st, notTips)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 
-	included := make(map[plumbing.Hash]struct{})
+	included = make(map[plumbing.Hash]struct{})
 	parents := make(map[plumbing.Hash][]plumbing.Hash)
 	visited := make(map[plumbing.Hash]struct{})
-	stack := append([]plumbing.Hash(nil), heads...)
+	// A wanted tag stands for the commit it peels to.
+	var stack []plumbing.Hash
+	for _, h := range heads {
+		if c, ok := peelToCommit(st, h); ok {
+			stack = append(stack, c.Hash)
+		}
+	}
 	for len(stack) > 0 {
 		if err := ctx.Err(); err != nil {
-			return nil, err
+			return nil, nil, err
 		}
 		h := stack[len(stack)-1]
 		stack = stack[:len(stack)-1]
@@ -1145,8 +1258,10 @@ func getShallowCommitsByRevList(ctx context.Context, st storage.Storer, heads []
 		parents[h] = c.ParentHashes
 		stack = append(stack, c.ParentHashes...)
 	}
+	if len(included) == 0 {
+		return nil, nil, errNothingSelected
+	}
 
-	var shallows []plumbing.Hash
 	for h := range included {
 		for _, p := range parents[h] {
 			if _, ok := included[p]; !ok {
@@ -1156,13 +1271,15 @@ func getShallowCommitsByRevList(ctx context.Context, st storage.Storer, heads []
 		}
 	}
 	plumbing.HashesSort(shallows)
-	return shallows, nil
+	return shallows, included, nil
 }
 
 // includeReachableTags implements the fetch "include-tag" feature: for every
-// annotated tag whose (peeled) target is already in objs, it adds the tag
-// object and every tag object along the chain, mirroring upstream pack-objects
-// --include-tag. Lightweight tags have no tag object and are skipped.
+// tag ref whose annotated tag leads, directly or through further tags, to an
+// object already in objs, it adds the tag objects on the way there. This is
+// the rule gitprotocol-capabilities gives for include-tag: a tag is packed
+// when the object it points at is. Lightweight tags have no tag object and
+// are skipped.
 func includeReachableTags(st storage.Storer, objs []plumbing.Hash) ([]plumbing.Hash, error) {
 	have := make(map[plumbing.Hash]struct{}, len(objs))
 	for _, h := range objs {
@@ -1215,26 +1332,20 @@ func includeReachableTags(st storage.Storer, objs []plumbing.Hash) ([]plumbing.H
 }
 
 // commonHaves is the negotiation state of a fetch: the client's haves that
-// the server also has, as upstream tracks them in have_obj and with the
-// THEY_HAVE flag, and the last answer of okToGiveUp.
+// the server also has, and the last answer of okToGiveUp.
 type commonHaves struct {
 	st storage.Storer
-	// wants are the commits that must reach the client's history before
-	// negotiation can stop.
+	// wants are the objects the client asked for.
 	wants []plumbing.Hash
-	// grafts are the commits taken as parentless, upstream's registered
-	// shallow commits.
+	// grafts are the commits taken as parentless.
 	grafts map[plumbing.Hash]struct{}
 
-	// counted holds the common haves not already implied by an earlier one,
-	// upstream's have_obj.
+	// counted holds the common haves not already implied by an earlier one.
 	counted []plumbing.Hash
-	// theyHave holds every common have and the parents of common commits,
-	// upstream's THEY_HAVE flag.
-	theyHave map[plumbing.Hash]struct{}
+	// clientHas holds every common have and the parents of common commits.
+	clientHas map[plumbing.Hash]struct{}
 	// oldest is the committer date, in seconds since the epoch, of the oldest
-	// common commit; the walk in okToGiveUp does not go below it. Zero means
-	// no common commit yet, as upstream's oldest_have, so a commit dated zero
+	// common commit. Zero means no common commit yet, so a commit dated zero
 	// does not pin it.
 	oldest int64
 	// last is the most recent common have.
@@ -1244,42 +1355,43 @@ type commonHaves struct {
 	added map[plumbing.Hash]bool
 
 	// nodes holds the commits read so far, nil for a commit the server does
-	// not have. Upstream keeps parsed commits in memory and clears only its
-	// marks between walks; keeping them here makes a repeated walk as cheap.
+	// not have.
 	nodes map[plumbing.Hash]*commitNode
-	// starts are the wants peeled to commits, oldest first. okToGiveUp fills
-	// it on its first walk and sets startsKnown, as no want may peel to one.
-	starts      []plumbing.Hash
-	startsKnown bool
 	// checked reports that ready holds the answer of okToGiveUp for the
-	// current theyHave and oldest.
+	// current clientHas and oldest.
 	checked bool
 	ready   bool
-	// gen numbers the walks of okToGiveUp. A node stamped with the current
-	// gen was visited, or reaches a common commit, in this walk, as
-	// upstream marks commits and clears the marks after each walk.
-	gen uint64
-	// stack is the walk's stack, kept so that each walk reuses its backing
-	// array rather than growing a new one.
-	stack []*commitNode
+
+	// tips holds the commits the wants peel to, oldest first, once peeled
+	// is set.
+	tips   []*commitNode
+	peeled bool
+	// walk numbers the checks okToGiveUp has run. A commitNode's marks
+	// count only when they carry the number of the current one, so a new
+	// check starts without marks and without clearing any.
+	walk uint
+	// path is the stack of the last walk, kept for its capacity.
+	path []walkStep
 }
 
 // newCommonHaves returns the negotiation state of a fetch of wants, before
 // any have is known, in which the commits in grafts and the server's own
-// shallow commits have no parents. Upstream registers the latter when it
-// reads the repository, so they bound both walks in every protocol version.
+// shallow commits have no parents. A shallow repository holds no history
+// beyond its shallow commits, whatever the request says, so they bound the
+// walks in every protocol version. Git's server treats its own shallow
+// commits the same way.
 func newCommonHaves(st storage.Storer, wants, grafts []plumbing.Hash) (*commonHaves, error) {
 	shallows, err := st.Shallow()
 	if err != nil {
 		return nil, fmt.Errorf("reading shallow commits: %w", err)
 	}
 	c := &commonHaves{
-		st:       st,
-		wants:    wants,
-		grafts:   make(map[plumbing.Hash]struct{}, len(grafts)+len(shallows)),
-		theyHave: map[plumbing.Hash]struct{}{},
-		added:    map[plumbing.Hash]bool{},
-		nodes:    map[plumbing.Hash]*commitNode{},
+		st:        st,
+		wants:     wants,
+		grafts:    make(map[plumbing.Hash]struct{}, len(grafts)+len(shallows)),
+		clientHas: map[plumbing.Hash]struct{}{},
+		added:     map[plumbing.Hash]bool{},
+		nodes:     map[plumbing.Hash]*commitNode{},
 	}
 	for _, h := range slices.Concat(grafts, shallows) {
 		c.grafts[h] = struct{}{}
@@ -1293,17 +1405,21 @@ type commitNode struct {
 	date int64
 	// parents are none for a grafted commit.
 	parents []plumbing.Hash
+	// clientHas reports whether the commit is in commonHaves.clientHas.
+	clientHas bool
 	// parentNodes holds the nodes of the first resolved parents, nil for a
-	// parent the server does not have. A walk resolves the parents in order,
-	// the first time it scans each, so later walks follow them without
-	// looking them up in nodes.
+	// parent the server lacks. A walk looks at the parents in order, so a
+	// later check follows the pointers instead of looking each parent up.
 	parentNodes []*commitNode
 	resolved    int
-	// theyHave mirrors the commit's membership of commonHaves.theyHave.
-	theyHave bool
-	// visited and reaches hold the gen of the last walk of okToGiveUp that
-	// visited the commit, and that found it reaches a common commit.
-	visited, reaches uint64
+
+	// entered is the check in which a walk entered the commit, or passed
+	// it over as older than the cutoff. It is not entered again in that
+	// check.
+	entered uint
+	// reaches is the check in which a walk found the commit to descend
+	// from one the client has.
+	reaches uint
 }
 
 // remember records commit in nodes and returns its node.
@@ -1312,19 +1428,19 @@ func (c *commonHaves) remember(commit *object.Commit) *commitNode {
 	if _, ok := c.grafts[commit.Hash]; ok {
 		n.parents = nil
 	}
-	_, n.theyHave = c.theyHave[commit.Hash]
+	_, n.clientHas = c.clientHas[commit.Hash]
 	c.nodes[commit.Hash] = n
 	return n
 }
 
-// markHave adds h to theyHave and reports whether it was not there yet.
-func (c *commonHaves) markHave(h plumbing.Hash) bool {
-	if _, ok := c.theyHave[h]; ok {
+// markClientHas adds h to clientHas and reports whether it was not there yet.
+func (c *commonHaves) markClientHas(h plumbing.Hash) bool {
+	if _, ok := c.clientHas[h]; ok {
 		return false
 	}
-	c.theyHave[h] = struct{}{}
+	c.clientHas[h] = struct{}{}
 	if n := c.nodes[h]; n != nil {
-		n.theyHave = true
+		n.clientHas = true
 	}
 	return true
 }
@@ -1346,37 +1462,15 @@ func (c *commonHaves) node(h plumbing.Hash) (*commitNode, error) {
 	return c.remember(commit), nil
 }
 
-// parentNode returns the node of the i-th parent of n, as node does, and
-// keeps it in n so that the next walk does not look it up again. The parents
-// before i must have been resolved already, as a walk scans them in order.
-func (c *commonHaves) parentNode(n *commitNode, i int) (*commitNode, error) {
-	if i < n.resolved {
-		return n.parentNodes[i], nil
-	}
-	p, err := c.node(n.parents[i])
-	if err != nil {
-		return nil, err
-	}
-	if n.parentNodes == nil {
-		n.parentNodes = make([]*commitNode, len(n.parents))
-	}
-	n.parentNodes[i] = p
-	n.resolved = i + 1
-	return p, nil
-}
-
 // add records the have h and reports whether the server has it, returning an
-// error if the object cannot be read. It mirrors upstream got_oid and
-// do_got_oid: the parents of a common commit count as had before the commit
-// itself is checked, and the oldest common commit bounds okToGiveUp. A have
-// that adds no commit to theyHave and does not move that bound, such as a
-// repeated have or a blob, keeps the answer okToGiveUp last gave.
+// error if the object cannot be read. The parents of a common commit count
+// as had by the client before the commit itself is checked. A have that adds
+// nothing to clientHas and does not move oldest, such as a repeated have or a
+// blob, leaves checked set, so the last answer of okToGiveUp stands.
 //
-// A have add has already processed is answered without reading it again, and
-// a commit an earlier walk read is not read again either. Of any other
-// object only the type is looked up, as upstream does for a have that is not
-// a commit, so a have naming a large blob, or a delta against one, is not
-// inflated; a commit is then read.
+// A have add has already processed is answered without reading it again. Of
+// an object that is not a known commit only the type is looked up, so a have
+// naming a large blob is not inflated; a commit is then read.
 func (c *commonHaves) add(h plumbing.Hash) (bool, error) {
 	if had, ok := c.added[h]; ok {
 		if had {
@@ -1413,12 +1507,12 @@ func (c *commonHaves) add(h plumbing.Hash) (bool, error) {
 			c.checked = false
 		}
 		for _, p := range n.parents {
-			if c.markHave(p) {
+			if c.markClientHas(p) {
 				c.checked = false
 			}
 		}
 	}
-	if c.markHave(h) {
+	if c.markClientHas(h) {
 		c.counted = append(c.counted, h)
 		if isCommit {
 			c.checked = false
@@ -1427,133 +1521,188 @@ func (c *commonHaves) add(h plumbing.Hash) (bool, error) {
 	return true, nil
 }
 
-// okToGiveUp reports whether every want reaches a commit the client has, so
-// that negotiation can stop. It mirrors upstream ok_to_give_up and
-// can_all_from_reach_with_flag (commit-reach.c): a depth-first walk per want,
-// oldest want first, sharing what earlier walks in the same call learned,
-// that does not descend below the oldest common commit. Upstream orders the
-// wants by generation number and then by date; without a commit-graph every
-// generation number is the same, so the date decides. It reports false while
-// no have is common, as upstream does. A want that does not peel to a commit
-// cannot be judged by ancestry and does not hold negotiation back, but one
-// that cannot be read is an error, unlike upstream in one case; see
-// peelWant.
+// okToGiveUp reports whether the client has told the server enough for
+// negotiation to stop: every want that peels to a commit either is had by the
+// client or descends from a commit the client has. From then on more haves
+// could only shrink the pack, not connect it, so the server answers "ready"
+// (or "continue" under multi_ack) and the client may send "done". It is false
+// while no have is common.
 //
-// The answer depends only on theyHave, oldest and the wants, so it is
-// returned again without a walk until add changes one of them. Otherwise it
-// walks again from scratch, as upstream does for every have it lacks, but
-// over the commits in nodes, so only commits no earlier walk reached are read
-// from storage. It is not monotonic: when a commit is dated before its parent,
-// a lower cutoff can let the walk from one want visit a commit before the
-// walk from another want marks it, and a true answer can turn false. A walk
-// that finds ctx done stops and returns ctx's error.
+// The answer is searched for the way git's server does, because the round in
+// which a server says "ready" is visible to the client. The search is not a
+// plain ancestry test: it is bounded and it shares its marks between wants,
+// so on histories whose commit dates disagree with their order it can miss a
+// path that exists. Those misses are part of the answer and are kept:
+//
+//   - The wants are walked one after the other, oldest committer date first,
+//     and the check fails at the first want that reaches nothing the client
+//     has.
+//   - A walk goes depth-first through the parents, in the order the commit
+//     lists them. It does not enter a parent dated before the oldest common
+//     commit, since a commit older than everything the client is known to
+//     have is not expected to descend from any of it. A parent dated the
+//     same second is entered. The bound applies to parents only, so a want
+//     is walked whatever its date.
+//   - A commit is entered at most once per check, whichever want the walk
+//     started from. Meeting it again only tells whether it was found to
+//     reach a common commit, which it may not have been when it was entered
+//     with a higher cutoff ahead of it or was skipped as too old.
+//   - A commit learns that a parent reaches a common commit when it looks at
+//     that parent, not when the walk returns from it. So once the walk is
+//     back at a commit, it still enters that commit's next unvisited parent
+//     before leaving it.
+//
+// The marks live for one check only. The answer is kept until add reports a
+// change that can alter it, and commits are read through nodes, so a later
+// check costs no object reads for commits an earlier one saw. Each check
+// enters a commit at most once and looks at each parent link at most twice.
+//
+// The answers are those git gives for a repository without a commit-graph
+// file. With one, git can say "ready" in a different round on a history whose
+// dates run against its parent links. The commit-graph is not consulted here,
+// so the answer does not depend on the file. Only the round in which "ready"
+// is sent differs, not what is fetched.
 func (c *commonHaves) okToGiveUp(ctx context.Context) (bool, error) {
-	if len(c.counted) == 0 {
+	if len(c.clientHas) == 0 {
 		return false, nil
 	}
 	if c.checked {
 		return c.ready, nil
 	}
+	if err := c.peelWants(); err != nil {
+		return false, err
+	}
 
-	if !c.startsKnown {
-		for _, w := range c.wants {
-			start, err := peelWant(c.st, w)
-			if err != nil {
-				c.starts = c.starts[:0]
-				return false, fmt.Errorf("reading want %s: %w", w, err)
-			}
-			if start != nil {
-				c.remember(start)
-				c.starts = append(c.starts, start.Hash)
-			}
+	c.walk++
+	ready := true
+	for _, tip := range c.tips {
+		reaches, err := c.reachesCommon(ctx, tip)
+		if err != nil {
+			return false, err
 		}
-		slices.SortStableFunc(c.starts, func(a, b plumbing.Hash) int {
-			return cmp.Compare(c.nodes[a].date, c.nodes[b].date)
-		})
-		c.startsKnown = true
+		if !reaches {
+			ready = false
+			break
+		}
 	}
+	c.checked, c.ready = true, ready
+	return ready, nil
+}
 
-	c.gen++
-	gen := c.gen
-	marked := func(n *commitNode) bool {
-		return n.theyHave || n.reaches == gen
+// peelWants fills tips, once, with the commits the wants peel to, oldest
+// first and otherwise in request order. A want that peels to no commit asks
+// for no history, so it cannot hold readiness back.
+func (c *commonHaves) peelWants() error {
+	if c.peeled {
+		return nil
 	}
+	tips := make([]*commitNode, 0, len(c.wants))
+	for _, h := range c.wants {
+		commit, err := peelWant(c.st, h)
+		if err != nil {
+			return fmt.Errorf("peeling want %s: %w", h, err)
+		}
+		if commit == nil {
+			continue
+		}
+		n := c.nodes[commit.Hash]
+		if n == nil {
+			n = c.remember(commit)
+		}
+		tips = append(tips, n)
+	}
+	slices.SortStableFunc(tips, func(a, b *commitNode) int {
+		return cmp.Compare(a.date, b.date)
+	})
+	c.tips, c.peeled = tips, true
+	return nil
+}
 
-	for _, start := range c.starts {
-		sn := c.nodes[start]
-		sn.visited = gen
-		c.stack = append(c.stack[:0], sn)
-		stack := c.stack
-		for len(stack) > 0 {
-			if err := ctx.Err(); err != nil {
-				return false, err
+// walkStep is a commit a walk is in, and the parent it looks at next.
+type walkStep struct {
+	node *commitNode
+	next int
+}
+
+// reachesCommon walks from tip as okToGiveUp describes and reports whether
+// tip is had by the client or was found to descend from a commit it has. It
+// honours the marks earlier walks of the same check left, and leaves its own.
+func (c *commonHaves) reachesCommon(ctx context.Context, tip *commitNode) (bool, error) {
+	tip.entered = c.walk
+	path := c.path[:0]
+	path = append(path, walkStep{node: tip})
+	defer func() { c.path = path[:0] }()
+
+	for len(path) > 0 {
+		if err := ctx.Err(); err != nil {
+			return false, err
+		}
+		step := &path[len(path)-1]
+		at := step.node
+		if at.clientHas || at.reaches == c.walk {
+			// Nothing below a commit known to reach the client's history
+			// needs walking, and its child on the path reaches it too.
+			path = path[:len(path)-1]
+			if len(path) > 0 {
+				path[len(path)-1].node.reaches = c.walk
 			}
-			top := stack[len(stack)-1]
-			if marked(top) {
-				stack = stack[:len(stack)-1]
-				if len(stack) > 0 {
-					stack[len(stack)-1].reaches = gen
+			continue
+		}
+
+		var enter *commitNode
+		for ; step.next < len(at.parents); step.next++ {
+			h := at.parents[step.next]
+			var parent *commitNode
+			if step.next < at.resolved {
+				parent = at.parentNodes[step.next]
+			} else {
+				var err error
+				if parent, err = c.node(h); err != nil {
+					return false, fmt.Errorf("getting commit %s: %w", h, err)
+				}
+				if at.parentNodes == nil {
+					at.parentNodes = make([]*commitNode, len(at.parents))
+				}
+				at.parentNodes[step.next] = parent
+				at.resolved = step.next + 1
+			}
+			if parent == nil {
+				// The server lacks this parent, but the client may have
+				// named a child of it, and then has it.
+				if _, ok := c.clientHas[h]; ok {
+					at.reaches = c.walk
 				}
 				continue
 			}
-
-			// The parents are scanned from the first one each time the walk
-			// returns to a commit, so a parent marked since marks the commit,
-			// and the scan still goes on to walk any parent not yet visited.
-			// What this visits decides what later walks skip.
-			pushed := false
-			for i := range top.parents {
-				n, err := c.parentNode(top, i)
-				if err != nil {
-					return false, err
-				}
-				if n == nil {
-					// A parent the server lacks is never walked, but may
-					// still be one the client has.
-					if _, ok := c.theyHave[top.parents[i]]; ok {
-						top.reaches = gen
-					}
-					continue
-				}
-				if marked(n) {
-					top.reaches = gen
-				}
-				if n.visited == gen {
-					continue
-				}
-				n.visited = gen
-				if c.oldest != 0 && n.date < c.oldest {
-					continue
-				}
-				stack = append(stack, n)
-				pushed = true
-				break
+			if parent.clientHas || parent.reaches == c.walk {
+				at.reaches = c.walk
 			}
-			if !pushed {
-				stack = stack[:len(stack)-1]
+			if parent.entered == c.walk {
+				continue
 			}
+			parent.entered = c.walk
+			// Zero means no common commit yet, and then nothing is too old.
+			if c.oldest != 0 && parent.date < c.oldest {
+				continue
+			}
+			enter = parent
+			break
 		}
-		c.stack = stack
-
-		if !marked(sn) {
-			c.checked, c.ready = true, false
-			return false, nil
+		if enter == nil {
+			path = path[:len(path)-1]
+			continue
 		}
+		// next stays on the entered parent: when the walk is back here, that
+		// parent is looked at again for what the walk below it found.
+		path = append(path, walkStep{node: enter})
 	}
-
-	c.checked, c.ready = true, true
-	return true, nil
+	return tip.clientHas || tip.reaches == c.walk, nil
 }
 
-// peelWant resolves the want h to the commit okToGiveUp walks from,
-// following annotated tags. It returns no commit, and no error, when h peels
-// to an object that is not a commit, or to a tag whose target the server does
-// not have: upstream can_all_from_reach_with_flag skips both, as deref_tag
-// gives no object for the latter. Any other failure to read h, a tag or the
-// commit is returned. For the want itself that matches upstream, which dies
-// on a want it cannot parse (receive_needs). It does not for a tag's target
-// that exists but cannot be read: upstream's deref_tag gives no object for it
-// too, so upstream skips that want where this returns the error.
+// peelWant resolves the want h to a commit, following annotated tags. It
+// returns no commit, and no error, when h peels to an object that is not a
+// commit, or to a tag whose target the server does not have. Any other
+// failure to read h, a tag or the commit is returned.
 func peelWant(st storage.Storer, h plumbing.Hash) (*object.Commit, error) {
 	for want := true; ; want = false {
 		typ, err := storer.EncodedObjectType(st, h)
@@ -1601,4 +1750,28 @@ func peelToCommit(st storage.Storer, h plumbing.Hash) (*object.Commit, bool) {
 	default:
 		return nil, false
 	}
+}
+
+// errNothingSelected is returned for a deepen-since or deepen-not request
+// that leaves no commit to send.
+var errNothingSelected = errors.New("shallow request selects no commit")
+
+// selectedClientShallows returns the client's shallow commits that a date or
+// exclusion request makes interior, and their parents: those the request
+// selects that are not on the new boundary. A client shallow commit that is
+// merely reachable from a want, but older than the date asked for or
+// excluded, stays shallow.
+func selectedClientShallows(st storage.Storer, clientShallows []plumbing.Hash, selected map[plumbing.Hash]struct{}, boundary []plumbing.Hash) (unshallows, parents []plumbing.Hash, err error) {
+	for _, h := range clientShallows {
+		if _, ok := selected[h]; !ok || slices.Contains(boundary, h) {
+			continue
+		}
+		c, err := object.GetCommit(st, h)
+		if err != nil {
+			return nil, nil, fmt.Errorf("getting commit %s: %w", h, err)
+		}
+		unshallows = append(unshallows, h)
+		parents = append(parents, c.ParentHashes...)
+	}
+	return unshallows, parents, nil
 }

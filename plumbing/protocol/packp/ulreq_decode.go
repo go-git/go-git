@@ -21,9 +21,9 @@ var ErrDeepenMutuallyExclusive = errors.New("deepen and deepen-since (or deepen-
 // stores it in the UploadRequest.
 func (req *UploadRequest) Decode(r io.Reader) error {
 	var (
-		nLine         int
-		line          []byte
-		deepenRevList bool
+		nLine          int
+		line           []byte
+		sinceOrNotSeen bool
 	)
 
 	s := pktline.NewScanner(r)
@@ -124,7 +124,7 @@ func (req *UploadRequest) Decode(r io.Reader) error {
 	for bytes.HasPrefix(line, deepen) {
 		switch {
 		case bytes.HasPrefix(line, deepenCommits):
-			if deepenRevList {
+			if sinceOrNotSeen {
 				return ErrDeepenMutuallyExclusive
 			}
 			line = bytes.TrimPrefix(line, deepenCommits)
@@ -146,14 +146,14 @@ func (req *UploadRequest) Decode(r io.Reader) error {
 				return err
 			}
 			req.Depth.DeepenSince = time.Unix(secs, 0).UTC()
-			deepenRevList = true
+			sinceOrNotSeen = true
 		case bytes.HasPrefix(line, deepenReference):
 			if req.Depth.Deepen > 0 {
 				return ErrDeepenMutuallyExclusive
 			}
 			line = bytes.TrimPrefix(line, deepenReference)
 			req.Depth.DeepenNot = append(req.Depth.DeepenNot, string(line))
-			deepenRevList = true
+			sinceOrNotSeen = true
 		default:
 			return decodeError("unexpected deepen specification: %q", line)
 		}
@@ -176,7 +176,7 @@ func (req *UploadRequest) Decode(r io.Reader) error {
 			}
 		}
 		// After deepen-since/deepen-not, only deepen-since/deepen-not or flush is valid
-		if deepenRevList && bytes.HasPrefix(line, deepen) && !bytes.HasPrefix(line, deepenSince) && !bytes.HasPrefix(line, deepenReference) {
+		if sinceOrNotSeen && bytes.HasPrefix(line, deepen) && !bytes.HasPrefix(line, deepenSince) && !bytes.HasPrefix(line, deepenReference) {
 			return ErrDeepenMutuallyExclusive
 		}
 	}

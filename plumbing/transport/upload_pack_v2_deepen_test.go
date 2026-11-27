@@ -14,6 +14,7 @@ import (
 	"github.com/go-git/go-git/v6/plumbing"
 	"github.com/go-git/go-git/v6/plumbing/format/pktline"
 	"github.com/go-git/go-git/v6/plumbing/object"
+	"github.com/go-git/go-git/v6/plumbing/protocol/packp"
 	"github.com/go-git/go-git/v6/plumbing/protocol/packp/sideband"
 	"github.com/go-git/go-git/v6/plumbing/storer"
 	"github.com/go-git/go-git/v6/utils/ioutil"
@@ -51,12 +52,14 @@ func TestUploadPackV2FetchDeepenNot(t *testing.T) {
 	require.NoError(t, err)
 	require.NotEmpty(t, c.ParentHashes, "HEAD must have a parent for this test")
 	parent := c.ParentHashes[0]
+	// deepen-not takes a ref name, not an object id.
+	require.NoError(t, st.SetReference(plumbing.NewHashReference("refs/heads/excluded", parent)))
 
 	// Excluding the parent leaves only the tip reachable, so the tip is the
 	// shallow boundary (its parent is excluded).
 	out := serveUploadPackV2Test(t, st, v2Request(t, "fetch", nil, []string{
 		"want " + head.Hash().String(),
-		"deepen-not " + parent.String(),
+		"deepen-not excluded",
 		"done",
 	}))
 
@@ -99,8 +102,7 @@ func TestUploadPackV2FetchDeepenAndSinceConflict(t *testing.T) {
 		ioutil.WriteNopCloser(&out),
 		&UploadPackRequest{GitProtocol: "version=2", StatelessRPC: true},
 	)
-	require.Error(t, err)
-	require.Contains(t, err.Error(), "cannot be used together")
+	require.ErrorIs(t, err, packp.ErrDeepenMutuallyExclusive)
 }
 
 func TestGetShallowCommitsByRevListInvariants(t *testing.T) {
@@ -112,7 +114,7 @@ func TestGetShallowCommitsByRevListInvariants(t *testing.T) {
 	require.NoError(t, err)
 	since := c.Committer.When
 
-	shallows, err := getShallowCommitsByRevList(context.Background(), st, []plumbing.Hash{head.Hash()}, since, nil)
+	shallows, _, err := boundaryByDateOrExclusion(context.Background(), st, []plumbing.Hash{head.Hash()}, since, nil)
 	require.NoError(t, err)
 
 	require.NotEmpty(t, shallows)
