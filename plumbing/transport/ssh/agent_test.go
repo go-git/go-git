@@ -226,3 +226,14 @@ func TestNewSSHAgentAuthClose(t *testing.T) { //nolint:paralleltest // sets SSH_
 	a.requireClosed(t, 1)
 	require.NoError(t, auth.Close())
 }
+
+func TestDefaultAuthNoAgent(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("the Windows OpenSSH agent pipe cannot be redirected")
+	}
+	t.Setenv("SSH_AUTH_SOCK", "")
+
+	_, err := NewTransport(Options{}).Connect(context.Background(), agentRequest(refusedAddr(t), "/repo.git"))
+	require.Error(t, err)
+	assert.ErrorContains(t, err, "github.com/go-git/x/ssh/agent")
+}

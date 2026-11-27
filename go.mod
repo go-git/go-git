@@ -12,6 +12,7 @@ require (
 	github.com/go-git/gcfg/v2 v2.0.3
 	github.com/go-git/go-billy/v6 v6.0.0-beta.1
 	github.com/go-git/go-git-fixtures/v6 v6.0.0-alpha.1.0.20261119064959-a5796c55ab4e
+	github.com/go-git/x/ssh/knownhosts v0.0.0-20261127150830-6a86daa321dc
 	github.com/kevinburke/ssh_config v1.6.0
 	github.com/pjbgf/sha1cd v0.7.0
 	github.com/sergi/go-diff v1.4.5

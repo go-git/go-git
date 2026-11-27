@@ -8,6 +8,7 @@ import (
 	"io"
 	"net"
 	"net/url"
+	"os"
 	"path/filepath"
 	"sync"
 	"testing"
@@ -17,6 +18,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	stdssh "golang.org/x/crypto/ssh"
+	"golang.org/x/crypto/ssh/knownhosts"
 	"golang.org/x/crypto/ssh/testdata"
 
 	"github.com/go-git/go-git/v6/internal/test/gitenv"
@@ -274,4 +276,107 @@ func TestSSHTransport_Archive(t *testing.T) {
 		names = append(names, hdr.Name)
 	}
 	assert.Greater(t, len(names), 0)
+}
+
+func TestSSHTransport_CustomHostKeyCallbackWithoutKnownHosts(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	t.Setenv("SSH_KNOWN_HOSTS", filepath.Join(home, "missing_known_hosts"))
+
+	addr := startSSHServer(t)
+	repoFS := test.PrepareRepository(t, fixtures.Basic().One(), t.TempDir(), "basic.git")
+
+	auth := &Password{
+		User: "git",
+		HostKeyCallbackHelper: HostKeyCallbackHelper{
+			HostKeyCallback: stdssh.InsecureIgnoreHostKey(),
+		},
+	}
+	tr := NewTransport(Options{ClientConfig: auth.ClientConfig})
+
+	sess, err := tr.Connect(context.Background(), &transport.Request{
+		URL: &url.URL{
+			Scheme: "ssh",
+			User:   url.User("git"),
+			Host:   formatSSHHost(addr),
+			Path:   filepath.ToSlash(repoFS.Root()),
+		},
+		Command: transport.UploadPackService,
+	})
+	require.NoError(t, err)
+	require.NoError(t, sess.Close())
+}
+
+func TestSSHTransport_HostKeyAlgorithms(t *testing.T) {
+	t.Parallel()
+
+	// x/crypto/ssh prefers ECDSA over Ed25519 host keys by default, so
+	// without HostKeyAlgorithms the server's ECDSA key would be negotiated
+	// and rejected by FixedHostKey.
+	addr := startSSHServer(t, ssh.HostKeyPEM(testdata.PEMBytes["ecdsa"]))
+	repoFS := test.PrepareRepository(t, fixtures.Basic().One(), t.TempDir(), "basic.git")
+
+	signer, err := stdssh.ParsePrivateKey(testdata.PEMBytes["ed25519"])
+	require.NoError(t, err)
+	fixed := stdssh.FixedHostKey(signer.PublicKey())
+
+	var gotKeyType string
+	auth := &Password{
+		User: "git",
+		HostKeyCallbackHelper: HostKeyCallbackHelper{
+			HostKeyCallback: func(hostname string, remote net.Addr, key stdssh.PublicKey) error {
+				gotKeyType = key.Type()
+				return fixed(hostname, remote, key)
+			},
+			HostKeyAlgorithms: []string{stdssh.KeyAlgoED25519},
+		},
+	}
+	tr := NewTransport(Options{ClientConfig: auth.ClientConfig})
+
+	sess, err := tr.Connect(context.Background(), &transport.Request{
+		URL: &url.URL{
+			Scheme: "ssh",
+			User:   url.User("git"),
+			Host:   formatSSHHost(addr),
+			Path:   filepath.ToSlash(repoFS.Root()),
+		},
+		Command: transport.UploadPackService,
+	})
+	require.NoError(t, err)
+	require.NoError(t, sess.Close())
+	assert.Equal(t, stdssh.KeyAlgoED25519, gotKeyType)
+}
+
+func TestSSHTransport_KnownHostsSelectsHostKeyAlgorithms(t *testing.T) {
+	addr := startSSHServer(t, ssh.HostKeyPEM(testdata.PEMBytes["ecdsa"]))
+	repoFS := test.PrepareRepository(t, fixtures.Basic().One(), t.TempDir(), "basic.git")
+
+	signer, err := stdssh.ParsePrivateKey(testdata.PEMBytes["ed25519"])
+	require.NoError(t, err)
+
+	// x/crypto/ssh prefers ECDSA by default, so the client must restrict
+	// negotiation to the key types known_hosts has for this host, or
+	// verification fails with a key mismatch.
+	// See https://github.com/go-git/go-git/issues/411.
+	home := t.TempDir()
+	knownHosts := filepath.Join(home, "known_hosts")
+	line := knownhosts.Line([]string{formatSSHHost(addr)}, signer.PublicKey())
+	require.NoError(t, os.WriteFile(knownHosts, []byte(line+"\n"), 0o600))
+	t.Setenv("HOME", home)
+	t.Setenv("SSH_KNOWN_HOSTS", knownHosts)
+
+	auth := &Password{User: "git"}
+	tr := NewTransport(Options{ClientConfig: auth.ClientConfig})
+
+	sess, err := tr.Connect(context.Background(), &transport.Request{
+		URL: &url.URL{
+			Scheme: "ssh",
+			User:   url.User("git"),
+			Host:   formatSSHHost(addr),
+			Path:   filepath.ToSlash(repoFS.Root()),
+		},
+		Command: transport.UploadPackService,
+	})
+	require.NoError(t, err)
+	require.NoError(t, sess.Close())
 }
