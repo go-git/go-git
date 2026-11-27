@@ -58,6 +58,32 @@ An example of changing the built-in `https` implementation to skip TLS could loo
 
 Some internal implementations enables code reuse amongst the different transport implementations. Some of these may be made public in the future (e.g. `plumbing/transport/internal/common`).
 
+### Remote Helpers
+
+Like Git, `transport.ParseURL` reads `<transport>::<address>` as a URL whose scheme is `<transport>`, and `String` returns it unchanged. No transport is built in for these schemes, even when `<transport>` matches a built-in scheme such as `file` or `https`, nor for `<transport>://` schemes go-git does not know. Using one requires registering a transport for it with `client.WithTransport`, so remote helpers are opt-in per helper and per operation.
+
+The experimental [`remotehelper`](https://github.com/go-git/x/tree/main/transport/remotehelper) module runs Git remote helper programs (`git-remote-<transport>`) that support the `connect` capability:
+
+```go
+import (
+    "github.com/go-git/go-git/v6"
+    "github.com/go-git/go-git/v6/plumbing/client"
+    "github.com/go-git/x/transport/remotehelper"
+)
+
+helper, err := remotehelper.NewTransport("foo", remotehelper.Options{})
+if err != nil {
+    return err
+}
+
+_, err = git.PlainClone(dir, &git.CloneOptions{
+    URL:           "foo::https://example.com/repo.git",
+    ClientOptions: []client.Option{client.WithTransport("foo", helper)},
+})
+```
+
+`ClientOptions` also apply to submodules, whose URLs come from the repository being cloned. Register only helpers that treat their address as data.
+
 ## Cache
 
 Several different operations across `go-git` lean on caching of objects in order to achieve optimal performance. The caching functionality is defined by the [cache.Object interface](plumbing/cache/common.go#L17).

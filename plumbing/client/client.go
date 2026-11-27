@@ -14,6 +14,7 @@ import (
 	gossh "golang.org/x/crypto/ssh"
 	"golang.org/x/net/proxy"
 
+	giturl "github.com/go-git/go-git/v6/internal/url"
 	"github.com/go-git/go-git/v6/plumbing/transport"
 	"github.com/go-git/go-git/v6/plumbing/transport/file"
 	xgit "github.com/go-git/go-git/v6/plumbing/transport/git"
@@ -298,6 +299,16 @@ func (c *Client) Close() error {
 func (c *Client) resolve(req *transport.Request) (transport.Transport, error) {
 	if req == nil || req.URL == nil {
 		return nil, fmt.Errorf("transport: nil request or URL")
+	}
+	// Git runs git-remote-<transport> for <transport>::<address> even when
+	// <transport> is a built-in scheme. The built-in transports cannot read
+	// the address, so only a transport registered with WithTransport may
+	// serve it.
+	if giturl.IsRemoteHelper(req.URL) {
+		if tr, ok := c.opts.schemes[req.URL.Scheme]; ok {
+			return tr, nil
+		}
+		return nil, fmt.Errorf("transport: no transport registered for remote helper %q", req.URL.Scheme)
 	}
 	return c.Transport(req.URL.Scheme)
 }

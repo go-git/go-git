@@ -126,10 +126,15 @@ func IsLocalEndpoint(url string) bool {
 }
 
 // Parse parses a remote URL string into a *url.URL. It handles:
+//   - Remote helper URLs (<transport>::<address>), see [ParseRemoteHelper]
 //   - Standard URLs (https://host/path, ssh://host/path, git://host/path)
 //   - SCP-like URLs (git@host:path) — normalized to ssh:// scheme
 //   - Local paths (/path/to/repo, C:\path) — normalized to file:// scheme
 func Parse(endpoint string) (*url.URL, error) {
+	if u, ok := ParseRemoteHelper(endpoint); ok {
+		return u, nil
+	}
+
 	if u, ok := ParseSCP(endpoint); ok {
 		return u, nil
 	}
@@ -166,6 +171,43 @@ func ParseURL(endpoint string) (*url.URL, error) {
 	}
 
 	return u, nil
+}
+
+// ParseRemoteHelper parses a URL of the form <transport>::<address>, which
+// Git hands to the remote helper git-remote-<transport>. Git checks for this
+// form before any other, so it takes precedence over the SCP-like syntax.
+//
+// The transport becomes the scheme. The address is kept verbatim in Opaque,
+// behind the second colon, so that String returns the endpoint unchanged.
+// See transport_get in
+// https://github.com/git/git/blob/v2.56.0/transport.c#L1247-L1251.
+func ParseRemoteHelper(endpoint string) (*url.URL, bool) {
+	n := 0
+	for n < len(endpoint) && isURLSchemeChar(n == 0, endpoint[n]) {
+		n++
+	}
+	if n == 0 || !strings.HasPrefix(endpoint[n:], "::") {
+		return nil, false
+	}
+
+	return &url.URL{
+		Scheme: endpoint[:n],
+		Opaque: endpoint[n+1:],
+	}, true
+}
+
+// IsRemoteHelper reports whether u was parsed from a <transport>::<address>
+// endpoint by ParseRemoteHelper.
+func IsRemoteHelper(u *url.URL) bool {
+	return strings.HasPrefix(u.Opaque, ":")
+}
+
+// isURLSchemeChar mirrors Git's is_urlschemechar. It is looser than
+// RFC 3986 because a scheme may start with a digit.
+func isURLSchemeChar(first bool, c byte) bool {
+	alphanumeric := ('a' <= c && c <= 'z') || ('A' <= c && c <= 'Z') || ('0' <= c && c <= '9')
+	special := c == '+' || c == '-' || c == '.'
+	return alphanumeric || (!first && special)
 }
 
 // ParseSCP parses an SCP-like URL (e.g. git@github.com:user/repo.git)
