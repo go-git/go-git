@@ -14,6 +14,7 @@ type commitIteratorByCTime struct {
 	seenExternal map[plumbing.Hash]bool
 	seen         map[plumbing.Hash]bool
 	heap         *binaryheap.Heap
+	parents      parentsFunc
 }
 
 // NewCommitIterCTime returns a CommitIter that walks the commit history,
@@ -64,7 +65,12 @@ func (w *commitIteratorByCTime) Next() (*Commit, error) {
 
 		w.seen[c.Hash] = true
 
-		for _, h := range c.ParentHashes {
+		parents, err := w.parents.of(c)
+		if err != nil {
+			return nil, err
+		}
+
+		for _, h := range parents {
 			if w.seen[h] || w.seenExternal[h] {
 				continue
 			}
@@ -77,6 +83,10 @@ func (w *commitIteratorByCTime) Next() (*Commit, error) {
 
 		return c, nil
 	}
+}
+
+func (w *commitIteratorByCTime) followParents(parents parentsFunc) {
+	w.parents = parents
 }
 
 func (w *commitIteratorByCTime) ForEach(cb func(*Commit) error) error {

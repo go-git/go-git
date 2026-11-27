@@ -7,6 +7,7 @@ import (
 	"github.com/stretchr/testify/suite"
 
 	"github.com/go-git/go-git/v6/plumbing"
+	"github.com/go-git/go-git/v6/plumbing/storer"
 )
 
 type CommitWalkerSuite struct {
@@ -361,4 +362,25 @@ func (s *CommitWalkerSuite) TestCommitPathIteratorInitialCommit() {
 	for i, commit := range commits {
 		s.Equal(expected[i], commit.Hash.String())
 	}
+}
+
+func (s *CommitWalkerSuite) TestCommitPathLogIter() {
+	commit := s.commit(plumbing.NewHash(s.Fixture.Head))
+	shallow, ok := s.Storer.(storer.ShallowStorer)
+	s.Require().True(ok)
+
+	isLicense := func(path string) bool { return path == "LICENSE" }
+
+	iter, err := NewCommitPathLogIter(shallow, isLicense, NewCommitPreorderIter(commit, nil, nil))
+	s.Require().NoError(err)
+
+	var commits []string
+	s.Require().NoError(iter.ForEach(func(c *Commit) error {
+		commits = append(commits, c.Hash.String())
+		return nil
+	}))
+	s.Equal([]string{"b029517f6300c2da0f4b651b8642506cd6aaf45d"}, commits)
+
+	_, err = NewCommitPathLogIter(shallow, isLicense, NewCommitPostorderIterFirstParent(commit, nil))
+	s.ErrorIs(err, errPathLogWalk)
 }

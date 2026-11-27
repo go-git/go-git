@@ -11,11 +11,31 @@ import (
 	"github.com/go-git/go-git/v6/storage"
 )
 
+// parentsFunc returns the hashes of the parents of c that a walk goes on to.
+type parentsFunc func(c *Commit) ([]plumbing.Hash, error)
+
+// of returns the parents of c a walk goes on to: every one of them, unless the
+// walk was given a parentsFunc of its own.
+func (f parentsFunc) of(c *Commit) ([]plumbing.Hash, error) {
+	if f == nil {
+		return c.ParentHashes, nil
+	}
+
+	return f(c)
+}
+
+// parentFollower is a walk that can be told, before it yields anything, which
+// parents of each commit it goes on to.
+type parentFollower interface {
+	followParents(parents parentsFunc)
+}
+
 type commitPreIterator struct {
 	seenExternal map[plumbing.Hash]bool
 	seen         map[plumbing.Hash]bool
 	stack        []CommitIter
 	start        *Commit
+	parents      parentsFunc
 }
 
 func forEachCommit(next func() (*Commit, error), cb func(*Commit) error) error {
@@ -94,17 +114,26 @@ func (w *commitPreIterator) Next() (*Commit, error) {
 
 		w.seen[c.Hash] = true
 
-		if c.NumParents() > 0 {
-			w.stack = append(w.stack, filteredParentIter(c, w.seen))
+		parents, err := w.parents.of(c)
+		if err != nil {
+			return nil, err
+		}
+
+		if len(parents) > 0 {
+			w.stack = append(w.stack, filteredParentIter(c, parents, w.seen))
 		}
 
 		return c, nil
 	}
 }
 
-func filteredParentIter(c *Commit, seen map[plumbing.Hash]bool) CommitIter {
+func (w *commitPreIterator) followParents(parents parentsFunc) {
+	w.parents = parents
+}
+
+func filteredParentIter(c *Commit, parents []plumbing.Hash, seen map[plumbing.Hash]bool) CommitIter {
 	var hashes []plumbing.Hash
-	for _, h := range c.ParentHashes {
+	for _, h := range parents {
 		if !seen[h] {
 			hashes = append(hashes, h)
 		}
@@ -122,8 +151,9 @@ func (w *commitPreIterator) ForEach(cb func(*Commit) error) error {
 func (w *commitPreIterator) Close() {}
 
 type commitPostIterator struct {
-	stack []*Commit
-	seen  map[plumbing.Hash]bool
+	stack   []*Commit
+	seen    map[plumbing.Hash]bool
+	parents parentsFunc
 }
 
 // NewCommitPostorderIter returns a CommitIter that walks the commit
@@ -158,11 +188,22 @@ func (w *commitPostIterator) Next() (*Commit, error) {
 
 		w.seen[c.Hash] = true
 
-		return c, c.Parents().ForEach(func(p *Commit) error {
+		parents, err := w.parents.of(c)
+		if err != nil {
+			return nil, err
+		}
+
+		return c, NewCommitIter(c.s,
+			storer.NewEncodedObjectLookupIter(c.s, plumbing.CommitObject, parents),
+		).ForEach(func(p *Commit) error {
 			w.stack = append(w.stack, p)
 			return nil
 		})
 	}
+}
+
+func (w *commitPostIterator) followParents(parents parentsFunc) {
+	w.parents = parents
 }
 
 func (w *commitPostIterator) ForEach(cb func(*Commit) error) error {
