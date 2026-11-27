@@ -894,7 +894,11 @@ func (r *Remote) addOrUpdateReferences(
 	if !rs.IsWildcard() {
 		ref, ok := refsDict[rs.Src()]
 		if !ok {
-			object, err := object.GetObject(r.s, plumbing.NewHash(rs.Src()))
+			h, ok := plumbing.FromHex(rs.Src())
+			if !ok {
+				return nil
+			}
+			object, err := object.GetObject(r.s, h)
 			if err == nil {
 				return r.addObject(rs, remoteRefs, object.ID(), cmds)
 			}
@@ -1219,8 +1223,8 @@ func doCalculateRefs(
 ) ([]*plumbing.Reference, error) {
 	var refList []*plumbing.Reference
 
-	if s.IsExactSHA1() {
-		ref := plumbing.NewHashReference(s.Dst(""), plumbing.NewHash(s.Src()))
+	if h, ok := plumbing.FromHex(s.Src()); ok {
+		ref := plumbing.NewHashReference(s.Dst(""), h)
 
 		refList = append(refList, ref)
 		return refList, refs.SetReference(ref)
@@ -1711,7 +1715,8 @@ func pushHashes(
 	if !allDelete {
 		req.Packfile = rd
 		go func() {
-			e := packfile.NewEncoder(wr, s, useRefDeltas)
+			e := packfile.NewEncoder(wr, s, useRefDeltas,
+				packfile.WithObjectFormat(config.Extensions.ObjectFormat))
 			if _, err := e.Encode(hs, config.Pack.Window); err != nil {
 				done <- wr.CloseWithError(err)
 				return

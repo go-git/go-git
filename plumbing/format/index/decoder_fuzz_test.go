@@ -2,13 +2,10 @@ package index
 
 import (
 	"bytes"
-	"crypto"
 	"io"
 	"testing"
 
 	fixtures "github.com/go-git/go-git-fixtures/v6"
-
-	gogithash "github.com/go-git/go-git/v6/plumbing/hash"
 )
 
 func FuzzIndexDecoder(f *testing.F) {
@@ -41,8 +38,7 @@ func FuzzIndexDecoder(f *testing.F) {
 
 	f.Fuzz(func(_ *testing.T, data []byte) {
 		idx := &Index{}
-		h := gogithash.New(crypto.SHA1)
-		d := NewDecoder(bytes.NewReader(data), h, WithSkipHash())
+		d := NewDecoder(bytes.NewReader(data), WithSkipHash())
 		_ = d.Decode(idx)
 	})
 }

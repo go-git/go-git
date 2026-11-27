@@ -18,6 +18,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/go-git/go-git/v6/plumbing"
+	"github.com/go-git/go-git/v6/plumbing/hash"
 )
 
 func TestNewPackScanner(t *testing.T) {
@@ -27,76 +28,102 @@ func TestNewPackScanner(t *testing.T) {
 		fixtures.ByTag("packfile").ByObjectFormat("sha256").One(),
 		t.TempDir(),
 	)
+	sha1Fixture := fixtures.NewOSFixture(fixtures.Basic().One(), t.TempDir())
+	sha256IDRev := revWithHashID(t, sha1Fixture, 2)
+	unknownIDRev := revWithHashID(t, sha1Fixture, 3)
 
 	tests := []struct {
-		name     string
-		hashSize int
-		pack     func() billy.File
-		idx      func() billy.File
-		rev      func() billy.File
-		want     string
+		name   string
+		format hash.ObjectFormat
+		pack   func() billy.File
+		idx    func() billy.File
+		rev    func() billy.File
+		want   string
 	}{
 		{
-			name:     "nil pack file",
-			hashSize: crypto.SHA256.Size(),
-			pack:     func() billy.File { return nil },
-			idx:      func() billy.File { f, _ := fixture.Idx(); return f },
-			rev:      func() billy.File { f, _ := fixture.Rev(); return f },
-			want:     "cannot create mmap for .pack file",
+			name:   "nil pack file",
+			format: hash.SHA256,
+			pack:   func() billy.File { return nil },
+			idx:    func() billy.File { f, _ := fixture.Idx(); return f },
+			rev:    func() billy.File { f, _ := fixture.Rev(); return f },
+			want:   "cannot create mmap for .pack file",
 		},
 		{
-			name:     "nil idx file",
-			hashSize: crypto.SHA256.Size(),
-			pack:     func() billy.File { f, _ := fixture.Packfile(); return f },
-			idx:      func() billy.File { return nil },
-			rev:      func() billy.File { f, _ := fixture.Rev(); return f },
-			want:     "cannot create mmap for .idx file",
+			name:   "nil idx file",
+			format: hash.SHA256,
+			pack:   func() billy.File { f, _ := fixture.Packfile(); return f },
+			idx:    func() billy.File { return nil },
+			rev:    func() billy.File { f, _ := fixture.Rev(); return f },
+			want:   "cannot create mmap for .idx file",
 		},
 		{
-			name:     "nil rev file",
-			hashSize: crypto.SHA256.Size(),
-			pack:     func() billy.File { f, _ := fixture.Packfile(); return f },
-			idx:      func() billy.File { f, _ := fixture.Idx(); return f },
-			rev:      func() billy.File { return nil },
-			want:     "cannot create mmap for .rev file",
+			name:   "nil rev file",
+			format: hash.SHA256,
+			pack:   func() billy.File { f, _ := fixture.Packfile(); return f },
+			idx:    func() billy.File { f, _ := fixture.Idx(); return f },
+			rev:    func() billy.File { return nil },
+			want:   "cannot create mmap for .rev file",
 		},
 		{
-			name:     "invalid pack file",
-			hashSize: crypto.SHA256.Size(),
-			pack:     func() billy.File { f, _ := fixture.Rev(); return f },
-			idx:      func() billy.File { f, _ := fixture.Idx(); return f },
-			rev:      func() billy.File { f, _ := fixture.Rev(); return f },
-			want:     "malformed pack file",
+			name:   "invalid pack file",
+			format: hash.SHA256,
+			pack:   func() billy.File { f, _ := fixture.Rev(); return f },
+			idx:    func() billy.File { f, _ := fixture.Idx(); return f },
+			rev:    func() billy.File { f, _ := fixture.Rev(); return f },
+			want:   "malformed pack file",
 		},
 		{
-			name:     "invalid idx file",
-			hashSize: crypto.SHA256.Size(),
-			pack:     func() billy.File { f, _ := fixture.Packfile(); return f },
-			idx:      func() billy.File { f, _ := fixture.Rev(); return f },
-			rev:      func() billy.File { f, _ := fixture.Rev(); return f },
-			want:     "malformed idx file",
+			name:   "invalid idx file",
+			format: hash.SHA256,
+			pack:   func() billy.File { f, _ := fixture.Packfile(); return f },
+			idx:    func() billy.File { f, _ := fixture.Rev(); return f },
+			rev:    func() billy.File { f, _ := fixture.Rev(); return f },
+			want:   "malformed idx file",
 		},
 		{
-			name:     "invalid rev file",
-			hashSize: crypto.SHA256.Size(),
-			pack:     func() billy.File { f, _ := fixture.Packfile(); return f },
-			idx:      func() billy.File { f, _ := fixture.Idx(); return f },
-			rev:      func() billy.File { f, _ := fixture.Packfile(); return f },
-			want:     "malformed rev file",
+			name:   "invalid rev file",
+			format: hash.SHA256,
+			pack:   func() billy.File { f, _ := fixture.Packfile(); return f },
+			idx:    func() billy.File { f, _ := fixture.Idx(); return f },
+			rev:    func() billy.File { f, _ := fixture.Packfile(); return f },
+			want:   "malformed rev file",
 		},
 		{
-			name:     "valid files sha256",
-			hashSize: crypto.SHA256.Size(),
-			pack:     func() billy.File { f, _ := fixture.Packfile(); return f },
-			idx:      func() billy.File { f, _ := fixture.Idx(); return f },
-			rev:      func() billy.File { f, _ := fixture.Rev(); return f },
+			name:   "unsupported object format",
+			format: "md5",
+			pack:   func() billy.File { f, _ := fixture.Packfile(); return f },
+			idx:    func() billy.File { f, _ := fixture.Idx(); return f },
+			rev:    func() billy.File { f, _ := fixture.Rev(); return f },
+			want:   hash.ErrUnsupportedHashFunction.Error(),
+		},
+		{
+			name:   "rev file hash id of another format",
+			format: hash.SHA1,
+			pack:   func() billy.File { f, _ := sha1Fixture.Packfile(); return f },
+			idx:    func() billy.File { f, _ := sha1Fixture.Idx(); return f },
+			rev:    func() billy.File { return openFile(t, sha256IDRev) },
+		},
+		{
+			name:   "rev file with an unknown hash id",
+			format: hash.SHA1,
+			pack:   func() billy.File { f, _ := sha1Fixture.Packfile(); return f },
+			idx:    func() billy.File { f, _ := sha1Fixture.Idx(); return f },
+			rev:    func() billy.File { return openFile(t, unknownIDRev) },
+			want:   "malformed rev file: unsupported hash id 3",
+		},
+		{
+			name:   "valid files sha256",
+			format: hash.SHA256,
+			pack:   func() billy.File { f, _ := fixture.Packfile(); return f },
+			idx:    func() billy.File { f, _ := fixture.Idx(); return f },
+			rev:    func() billy.File { f, _ := fixture.Rev(); return f },
 		},
 	}
 
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
-			scanner, err := NewPackScanner(tc.hashSize, tc.pack(), tc.idx(), tc.rev())
+			scanner, err := NewPackScanner(tc.format, tc.pack(), tc.idx(), tc.rev())
 
 			if tc.want != "" {
 				assert.ErrorContains(t, err, tc.want)
@@ -110,6 +137,29 @@ func TestNewPackScanner(t *testing.T) {
 			}
 		})
 	}
+}
+
+// revWithHashID writes a copy of the fixture's rev file whose header
+// names the hash function id, and returns its path.
+func revWithHashID(t *testing.T, f *fixtures.OSFixture, id uint32) string {
+	t.Helper()
+	rev, err := f.Rev()
+	require.NoError(t, err)
+	raw, err := io.ReadAll(rev)
+	require.NoError(t, err)
+	require.NoError(t, rev.Close())
+
+	binary.BigEndian.PutUint32(raw[8:12], id)
+	path := filepath.Join(t.TempDir(), "pack.rev")
+	require.NoError(t, os.WriteFile(path, raw, 0o600))
+	return path
+}
+
+func openFile(t *testing.T, path string) billy.File {
+	t.Helper()
+	f, err := os.Open(path)
+	require.NoError(t, err)
+	return f
 }
 
 func TestPackScannerClose(t *testing.T) {
@@ -127,7 +177,7 @@ func TestPackScannerClose(t *testing.T) {
 	rev, err := fixture.Rev()
 	require.NoError(t, err)
 	scanner, err := NewPackScanner(
-		crypto.SHA256.Size(),
+		hash.SHA256,
 		pack,
 		idx,
 		rev,
@@ -357,7 +407,7 @@ func TestNewPackScannerRejectsMalformedIdx(t *testing.T) {
 			rev, err := fixture.Rev()
 			require.NoError(t, err)
 
-			scanner, err := NewPackScanner(crypto.SHA256.Size(), pack, corruptIdx, rev)
+			scanner, err := NewPackScanner(hash.SHA256, pack, corruptIdx, rev)
 			assert.ErrorIs(t, err, ErrCorruptedIdx)
 			assert.ErrorContains(t, err, "malformed idx file")
 			assert.Nil(t, scanner)
@@ -413,7 +463,7 @@ func TestPackScannerRejectsOutOfRangeOffset(t *testing.T) {
 	rev, err := fixture.Rev()
 	require.NoError(t, err)
 
-	scanner, err := NewPackScanner(hashSize, pack, mutatedIdx, rev)
+	scanner, err := NewPackScanner(hash.SHA256, pack, mutatedIdx, rev)
 	require.NoError(t, err, "the idx is well-formed, only its offset is out of range")
 	defer scanner.Close()
 

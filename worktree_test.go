@@ -3,7 +3,6 @@ package git
 import (
 	"bytes"
 	"context"
-	"crypto"
 	"errors"
 	"fmt"
 	"io"
@@ -1814,7 +1813,7 @@ func snapshotIndex(t *testing.T, r *Repository) []byte {
 	require.NoError(t, err)
 
 	var buf bytes.Buffer
-	err = index.NewEncoder(&buf, crypto.SHA1.New()).Encode(idx)
+	err = index.NewEncoder(&buf).Encode(idx)
 	require.NoError(t, err)
 
 	return buf.Bytes()

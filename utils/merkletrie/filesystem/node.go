@@ -11,6 +11,7 @@ import (
 
 	"github.com/go-git/go-billy/v6"
 
+	"github.com/go-git/go-git/v6/internal/hashutil"
 	"github.com/go-git/go-git/v6/plumbing"
 	"github.com/go-git/go-git/v6/plumbing/filemode"
 	format "github.com/go-git/go-git/v6/plumbing/format/config"
@@ -29,7 +30,9 @@ type Options struct {
 
 	// ObjectFormat is the object format the hashes of the files are
 	// computed in, which must be the index's for them to compare equal.
-	// SHA-1 is used when it is unset.
+	// SHA-1 is used when it is unset. Children of a node fail with an
+	// error wrapping hash.ErrUnsupportedHashFunction when it is neither
+	// SHA-1 nor SHA-256.
 	ObjectFormat format.ObjectFormat
 
 	// Index is used to enable the metadata-first comparison optimization while
@@ -217,6 +220,12 @@ func (n *node) calculateChildren() error {
 
 	if len(n.children) != 0 {
 		return nil
+	}
+
+	// Hash cannot return an error, so reject an unsupported object
+	// format here, before any child that would need hashing exists.
+	if err := hashutil.Check(n.objectFormat()); err != nil {
+		return err
 	}
 
 	files, err := n.fs.ReadDir(n.path)
@@ -458,7 +467,12 @@ func (n *node) doCalculateHashForRegular() plumbing.Hash {
 	}
 	defer func() { _ = f.Close() }()
 
-	h := plumbing.NewHasher(n.objectFormat(), plumbing.BlobObject, n.size)
+	// NewHasher cannot fail here. A node only exists once its parent's
+	// calculateChildren has checked the object format.
+	h, err := plumbing.NewHasher(n.objectFormat(), plumbing.BlobObject, n.size)
+	if err != nil {
+		return plumbing.ZeroHash
+	}
 	var dst io.Writer = h
 
 	if n.options != nil && n.options.AutoCRLF {
@@ -493,7 +507,11 @@ func (n *node) doCalculateHashForSymlink() plumbing.Hash {
 		return plumbing.ZeroHash
 	}
 
-	h := plumbing.NewHasher(n.objectFormat(), plumbing.BlobObject, n.size)
+	// NewHasher cannot fail here, as in doCalculateHashForRegular.
+	h, err := plumbing.NewHasher(n.objectFormat(), plumbing.BlobObject, n.size)
+	if err != nil {
+		return plumbing.ZeroHash
+	}
 	if _, err := h.Write([]byte(target)); err != nil {
 		return plumbing.ZeroHash
 	}

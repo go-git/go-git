@@ -153,6 +153,8 @@ func (idx *singleEntryIndex) MayContain(h plumbing.Hash) bool {
 	return idx.entry.Hash.Equal(h)
 }
 
+func (idx *singleEntryIndex) ObjectFormat() format.ObjectFormat { return idx.entry.Hash.Format() }
+
 func (idx *singleEntryIndex) Close() error { return nil }
 
 type singleEntryIter struct {
@@ -236,7 +238,7 @@ func zlibCompress(t *testing.T, content []byte) []byte {
 }
 
 func testObjectHash(typ plumbing.ObjectType, content []byte) plumbing.Hash {
-	h := plumbing.NewHasher(format.SHA1, typ, int64(len(content)))
+	h, _ := plumbing.NewHasher(format.SHA1, typ, int64(len(content)))
 	_, _ = h.Write(content)
 	return h.Sum()
 }

@@ -10,7 +10,7 @@ import (
 
 	"github.com/go-git/go-git/v6/internal/sharedfile"
 	"github.com/go-git/go-git/v6/plumbing"
-	formatcfg "github.com/go-git/go-git/v6/plumbing/format/config"
+	"github.com/go-git/go-git/v6/plumbing/hash"
 	gsync "github.com/go-git/go-git/v6/utils/sync"
 	"github.com/go-git/go-git/v6/x/fdpool"
 )
@@ -41,6 +41,7 @@ type ReadAtCloser = sharedfile.ReadAtCloser
 // descriptors open indefinitely while still sharing a single FD across
 // concurrent operations.
 type LazyIndex struct {
+	format   hash.ObjectFormat
 	hashSize int
 	count    int
 	count64  int
@@ -167,6 +168,7 @@ func (s *LazyIndex) init(packHash plumbing.Hash) error {
 
 	s.count = int(s.fanout[255])
 
+	s.format = packHash.Format()
 	s.hashSize = packHash.Size()
 	s.namesStart = s.fanoutStart + idxFanoutSize
 	s.crcStart = s.namesStart + (s.count * s.hashSize)
@@ -210,6 +212,12 @@ func (s *LazyIndex) Contains(h plumbing.Hash) (bool, error) {
 
 	_, found, err := s.findHashPos(idx, h)
 	return found, err
+}
+
+// ObjectFormat implements the Index interface. It returns the object
+// format of the pack checksum the index was opened with.
+func (s *LazyIndex) ObjectFormat() hash.ObjectFormat {
+	return s.format
 }
 
 // MayContain implements the Index interface. It reports whether the
@@ -423,7 +431,7 @@ func (s *LazyIndex) CloseIdleDescriptors() error {
 // position (0..count-1) if found.
 func (s *LazyIndex) findHashPos(idx io.ReaderAt, h plumbing.Hash) (int, bool, error) {
 	if h.Size() != s.hashSize {
-		return 0, false, fmt.Errorf("%w: %d-byte hash, index has %d", formatcfg.ErrObjectFormatMismatch, h.Size(), s.hashSize)
+		return 0, false, fmt.Errorf("%w: %d-byte hash, index has %d", hash.ErrObjectFormatMismatch, h.Size(), s.hashSize)
 	}
 	first := int(h.Bytes()[0])
 	var lo int

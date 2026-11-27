@@ -15,6 +15,7 @@ import (
 	fixtures "github.com/go-git/go-git-fixtures/v6"
 
 	"github.com/go-git/go-git/v6/plumbing"
+	"github.com/go-git/go-git/v6/plumbing/hash"
 )
 
 func FuzzValidateIdx(f *testing.F) {
@@ -108,10 +109,11 @@ func FuzzPackScanner(f *testing.F) {
 	}
 
 	f.Fuzz(func(t *testing.T, pack, idx, rev []byte, isSHA256 bool) {
-		hashSize := crypto.SHA1.Size()
+		format := hash.SHA1
 		if isSHA256 {
-			hashSize = crypto.SHA256.Size()
+			format = hash.SHA256
 		}
+		hashSize := format.Size()
 
 		// NewPackScanner only takes ownership of the files it gets to load,
 		// so close every handle here: a second Close on a file the scanner
@@ -130,7 +132,7 @@ func FuzzPackScanner(f *testing.F) {
 			return file
 		}
 
-		s, err := NewPackScanner(hashSize, open("pack", pack), open("idx", idx), open("rev", rev))
+		s, err := NewPackScanner(format, open("pack", pack), open("idx", idx), open("rev", rev))
 		if err != nil {
 			return
 		}

@@ -101,7 +101,7 @@ func (s *EncoderAdvancedSuite) testEncodeDecode(
 	hashes = auxHashes
 
 	buf := bytes.NewBuffer(nil)
-	enc := NewEncoder(buf, storage, false)
+	enc := NewEncoder(buf, storage, false, WithObjectFormat(objectFormat))
 	encodeHash, err := enc.Encode(hashes, packWindow)
 	s.NoError(err)
 
@@ -126,7 +126,7 @@ func (s *EncoderAdvancedSuite) testEncodeDecode(
 	_, err = f.Seek(0, io.SeekStart)
 	s.NoError(err)
 
-	p := NewPackfile(f, WithIdx(index), WithFs(fs), WithObjectIDSize(objectFormat.Size()))
+	p := NewPackfile(f, WithIdx(index), WithFs(fs), WithObjectFormat(objectFormat))
 
 	decodeHash, err := p.ID()
 	s.NoError(err)

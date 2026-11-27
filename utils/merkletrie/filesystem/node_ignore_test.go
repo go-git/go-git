@@ -4,6 +4,7 @@ import (
 	"testing"
 
 	"github.com/go-git/go-billy/v6/memfs"
+	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
 	"github.com/go-git/go-git/v6/plumbing"
@@ -11,6 +12,7 @@ import (
 	format "github.com/go-git/go-git/v6/plumbing/format/config"
 	"github.com/go-git/go-git/v6/plumbing/format/gitignore"
 	"github.com/go-git/go-git/v6/plumbing/format/index"
+	"github.com/go-git/go-git/v6/plumbing/hash"
 	"github.com/go-git/go-git/v6/utils/merkletrie"
 	mindex "github.com/go-git/go-git/v6/utils/merkletrie/index"
 	"github.com/go-git/go-git/v6/utils/merkletrie/noder"
@@ -22,8 +24,9 @@ import (
 // resolve to no changes without relying on the metadata fast-path.
 func blobHash(t *testing.T, content []byte) plumbing.Hash {
 	t.Helper()
-	h := plumbing.NewHasher(format.SHA1, plumbing.BlobObject, int64(len(content)))
-	_, err := h.Write(content)
+	h, err := plumbing.NewHasher(format.SHA1, plumbing.BlobObject, int64(len(content)))
+	require.NoError(t, err)
+	_, err = h.Write(content)
 	require.NoError(t, err)
 	return h.Sum()
 }
@@ -379,4 +382,19 @@ func childNames(t *testing.T, root noder.Noder, path ...string) []string {
 		names = append(names, c.Name())
 	}
 	return names
+}
+
+func TestUnknownObjectFormatFailsChildren(t *testing.T) {
+	t.Parallel()
+	fs := memfs.New()
+	require.NoError(t, WriteFile(fs, "foo", []byte("foo\n"), 0o644))
+
+	root := NewRootNodeWithOptions(fs, nil, Options{ObjectFormat: format.ObjectFormat("sha512")})
+	children, err := root.Children()
+	require.ErrorIs(t, err, hash.ErrUnsupportedHashFunction)
+	assert.Empty(t, children)
+
+	n, err := root.NumChildren()
+	require.ErrorIs(t, err, hash.ErrUnsupportedHashFunction)
+	assert.Equal(t, -1, n)
 }

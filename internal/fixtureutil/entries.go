@@ -14,7 +14,7 @@ func Entries(f *fixtures.Fixture) map[plumbing.Hash]int64 {
 	src := f.Entries()
 	m := make(map[plumbing.Hash]int64, len(src))
 	for h, o := range src {
-		m[plumbing.NewHash(h)] = o
+		m[hash(h)] = o
 	}
 	return m
 }
@@ -44,11 +44,18 @@ func ScannerEntries(f *fixtures.Fixture) []ScannerEntry {
 			Type:            plumbing.ObjectType(e.Type),
 			Offset:          e.Offset,
 			Size:            e.Size,
-			Hash:            plumbing.NewHash(e.Hash),
-			Reference:       plumbing.NewHash(e.Reference),
+			Hash:            hash(e.Hash),
+			Reference:       hash(e.Reference),
 			OffsetReference: e.OffsetReference,
 			CRC32:           e.CRC32,
 		}
 	}
 	return out
+}
+
+// hash parses a fixture's hex object id. The empty string, which fixtures
+// use for an absent id, yields the zero hash.
+func hash(s string) plumbing.Hash {
+	h, _ := plumbing.FromHex(s)
+	return h
 }

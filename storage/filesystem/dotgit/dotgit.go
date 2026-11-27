@@ -5,10 +5,8 @@ package dotgit
 import (
 	"bufio"
 	"bytes"
-	"crypto"
 	"errors"
 	"fmt"
-	"hash"
 	"io"
 	"maps"
 	"os"
@@ -30,7 +28,6 @@ import (
 	"github.com/go-git/go-git/v6/plumbing/format/idxfile"
 	"github.com/go-git/go-git/v6/plumbing/format/packfile"
 	"github.com/go-git/go-git/v6/plumbing/format/revfile"
-	plumbhash "github.com/go-git/go-git/v6/plumbing/hash"
 	"github.com/go-git/go-git/v6/storage"
 	"github.com/go-git/go-git/v6/utils/ioutil"
 	"github.com/go-git/go-git/v6/x/fdpool"
@@ -686,8 +683,8 @@ func packBaseHash(base string) (plumbing.Hash, bool) {
 	}
 
 	hex := base[i+1:]
-	h := plumbing.NewHash(hex)
-	return h, !h.IsZero() && h.String() == hex
+	h, ok := plumbing.FromHex(hex)
+	return h, ok && !h.IsZero() && h.String() == hex
 }
 
 // cachedPackBase returns the base name the pack is listed under in the
@@ -844,23 +841,14 @@ func (d *DotGit) generateInMemoryRev(h plumbing.Hash) (idxfile.ReadAtCloser, err
 		_ = f.Close()
 	}()
 
-	var hasher hash.Hash
-	if h.Size() == crypto.SHA256.Size() {
-		hasher = plumbhash.New(crypto.SHA256)
-	} else {
-		hasher = plumbhash.New(crypto.SHA1)
-	}
-
-	idx := idxfile.NewMemoryIndex(h.Size())
-	dec := idxfile.NewDecoder(f, hasher)
+	idx := idxfile.NewMemoryIndex(h.Format())
+	dec := idxfile.NewDecoder(f)
 	if err := dec.Decode(idx); err != nil {
 		return nil, fmt.Errorf("cannot decode idx for in-memory rev generation: %w", err)
 	}
 
-	hasher.Reset()
-
 	var buf bytes.Buffer
-	if err := revfile.Encode(&buf, hasher, idx); err != nil {
+	if err := revfile.Encode(&buf, idx); err != nil {
 		return nil, fmt.Errorf("cannot encode in-memory rev: %w", err)
 	}
 
@@ -1234,8 +1222,8 @@ func (d *DotGit) forEachObjectHash(fun func(plumbing.Hash) error) error {
 			}
 
 			for _, o := range d {
-				h := plumbing.NewHash(base + o.Name())
-				if h.IsZero() {
+				h, ok := plumbing.FromHex(base + o.Name())
+				if !ok {
 					// Ignore files with badly-formatted names.
 					continue
 				}

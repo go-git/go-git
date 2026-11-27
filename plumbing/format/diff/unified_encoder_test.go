@@ -1058,7 +1058,7 @@ type testFile struct {
 }
 
 func (t testFile) Hash() plumbing.Hash {
-	hasher := plumbing.FromObjectFormat(config.SHA1)
+	hasher, _ := plumbing.NewObjectHasher(config.SHA1)
 	h, _ := hasher.Compute(plumbing.BlobObject, []byte(t.seed))
 	return h
 }

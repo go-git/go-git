@@ -16,7 +16,6 @@ import (
 	"github.com/stretchr/testify/suite"
 
 	"github.com/go-git/go-git/v6/plumbing"
-	formatcfg "github.com/go-git/go-git/v6/plumbing/format/config"
 	"github.com/go-git/go-git/v6/plumbing/hash"
 	"github.com/go-git/go-git/v6/x/fdpool"
 )
@@ -384,7 +383,7 @@ func TestMemoryIndexOffset64OutOfRange(t *testing.T) {
 	idxBytes, h := buildOOBOffset64Idx()
 
 	idx := new(MemoryIndex)
-	d := NewDecoder(FromBytes(idxBytes), hash.New(crypto.SHA1))
+	d := NewDecoder(FromBytes(idxBytes))
 	require.NoError(t, d.Decode(idx))
 
 	_, err := idx.FindOffset(h)
@@ -450,7 +449,7 @@ func TestLazyIndexCloseIdleDescriptors(t *testing.T) {
 	require.NoError(t, err)
 
 	memIdx := new(MemoryIndex)
-	d := NewDecoder(FromBytes(idxBytes), hash.New(crypto.SHA1))
+	d := NewDecoder(FromBytes(idxBytes))
 	require.NoError(t, d.Decode(memIdx))
 
 	revBytes, err := buildTestRevFile(memIdx)
@@ -654,7 +653,7 @@ func TestLazyIndex_EntriesWithPrefix_MultiByte(t *testing.T) {
 	require.NoError(t, err)
 
 	var idxBuf bytes.Buffer
-	require.NoError(t, Encode(&idxBuf, hash.New(crypto.SHA1), memIdx))
+	require.NoError(t, Encode(&idxBuf, memIdx))
 	idxBytes := idxBuf.Bytes()
 
 	revBytes, err := buildTestRevFile(memIdx)
@@ -731,7 +730,7 @@ func fixtureLazyIndex(withRev bool) (*LazyIndex, error) {
 	}
 
 	memIdx := new(MemoryIndex)
-	d := NewDecoder(FromBytes(idxBytes), hash.New(crypto.SHA1))
+	d := NewDecoder(FromBytes(idxBytes))
 	if err := d.Decode(memIdx); err != nil {
 		return nil, err
 	}
@@ -811,7 +810,7 @@ func TestLazyIndex_WithPool_EvictionAndReopen(t *testing.T) {
 	require.NoError(t, err)
 
 	memIdx := new(MemoryIndex)
-	d := NewDecoder(FromBytes(idxBytes), hash.New(crypto.SHA1))
+	d := NewDecoder(FromBytes(idxBytes))
 	require.NoError(t, d.Decode(memIdx))
 
 	revBytes, err := buildTestRevFile(memIdx)
@@ -874,5 +873,34 @@ func TestLazyIndexRejectsOtherFormatHash(t *testing.T) {
 	t.Cleanup(func() { _ = idx.Close() })
 
 	_, err = idx.Contains(plumbing.NewHash(strings.Repeat("a", 64)))
-	require.ErrorIs(t, err, formatcfg.ErrObjectFormatMismatch)
+	require.ErrorIs(t, err, hash.ErrObjectFormatMismatch)
+}
+
+func TestLazyIndexObjectFormat(t *testing.T) {
+	t.Parallel()
+
+	sha1Idx, err := fixtureLazyIndex(true)
+	require.NoError(t, err)
+	defer sha1Idx.Close()
+	assert.Equal(t, hash.SHA1, sha1Idx.ObjectFormat())
+
+	f, err := fixtures.ByTag("packfile").ByObjectFormat("sha256").One().Idx()
+	require.NoError(t, err)
+	raw, err := io.ReadAll(f)
+	require.NoError(t, err)
+	memIdx := NewMemoryIndex(hash.SHA256)
+	require.NoError(t, NewDecoder(FromBytes(raw)).Decode(memIdx))
+	revBytes, err := buildTestRevFile(memIdx)
+	require.NoError(t, err)
+
+	openIdx := func() (ReadAtCloser, error) {
+		return nopCloserReaderAt{bytes.NewReader(raw)}, nil
+	}
+	openRev := func() (ReadAtCloser, error) {
+		return nopCloserReaderAt{bytes.NewReader(revBytes)}, nil
+	}
+	sha256Idx, err := NewLazyIndex(openIdx, openRev, memIdx.PackfileChecksum)
+	require.NoError(t, err)
+	defer sha256Idx.Close()
+	assert.Equal(t, hash.SHA256, sha256Idx.ObjectFormat())
 }

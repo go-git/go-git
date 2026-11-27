@@ -52,9 +52,9 @@ type PackHandleResolver func() (PackHandle, error)
 // lifetime is owned by the resolver. See [PackHandleResolver] for
 // the resolver contract.
 func WithPackHandle(get PackHandleResolver) PackfileOption {
-	return func(p *Packfile) {
+	return packfileOptionFunc(func(p *Packfile) {
 		p.resolveHandle = get
-	}
+	})
 }
 
 // openRandomReader re-resolves the pack handle via resolveHandle

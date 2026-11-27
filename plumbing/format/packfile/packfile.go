@@ -2,7 +2,6 @@ package packfile
 
 import (
 	"bufio"
-	"crypto"
 	"errors"
 	"fmt"
 	"io"
@@ -12,10 +11,12 @@ import (
 
 	billy "github.com/go-git/go-billy/v6"
 
+	"github.com/go-git/go-git/v6/internal/hashutil"
 	"github.com/go-git/go-git/v6/plumbing"
 	"github.com/go-git/go-git/v6/plumbing/cache"
 	format "github.com/go-git/go-git/v6/plumbing/format/config"
 	"github.com/go-git/go-git/v6/plumbing/format/idxfile"
+	"github.com/go-git/go-git/v6/plumbing/hash"
 	"github.com/go-git/go-git/v6/plumbing/storer"
 	"github.com/go-git/go-git/v6/utils/ioutil"
 	gogitsync "github.com/go-git/go-git/v6/utils/sync"
@@ -49,7 +50,7 @@ type Packfile struct {
 
 	id           plumbing.Hash
 	m            sync.Mutex
-	objectIDSize int
+	objectFormat format.ObjectFormat
 
 	once    sync.Once
 	onceErr error
@@ -60,6 +61,11 @@ type Packfile struct {
 // NewPackfile returns a packfile representation for the given .pack
 // file and idx. If [WithFs] is set the packfile returns [FSObject]s;
 // otherwise it returns [plumbing.MemoryObject]s.
+//
+// The pack is read as SHA-1 unless [WithObjectFormat] sets another
+// object format. An unsupported format makes the first access to the
+// pack fail with an error wrapping [hash.ErrUnsupportedHashFunction],
+// and an idx of another format with [hash.ErrObjectFormatMismatch].
 //
 // When [WithPackHandle] is supplied, the resolver owns the pack
 // file descriptor and the file argument is redundant; the
@@ -72,10 +78,12 @@ func NewPackfile(
 ) *Packfile {
 	p := &Packfile{
 		file:         file,
-		objectIDSize: crypto.SHA1.Size(),
+		objectFormat: format.DefaultObjectFormat,
 	}
 	for _, opt := range opts {
-		opt(p)
+		if opt != nil {
+			opt.applyPackfile(p)
+		}
 	}
 
 	if p.resolveHandle != nil && file != nil {
@@ -322,13 +330,19 @@ func (p *Packfile) init() error {
 			return
 		}
 
+		if err := hashutil.Check(p.objectFormat); err != nil {
+			p.onceErr = err
+			return
+		}
+		idx := p.Index
+		if f := idx.ObjectFormat(); f != p.objectFormat {
+			p.onceErr = fmt.Errorf("%w: %s idx for a %s pack", hash.ErrObjectFormatMismatch, f, p.objectFormat)
+			return
+		}
+
 		p.rbuf = gogitsync.GetBufioReader(nil)
 
-		opts := []ScannerOption{WithBufioReader(p.rbuf)}
-
-		if p.objectIDSize == format.SHA256Size {
-			opts = append(opts, WithSHA256())
-		}
+		opts := []ScannerOption{WithBufioReader(p.rbuf), WithObjectFormat(p.objectFormat)}
 
 		var scanSrc io.Reader
 		if p.handle != nil {
@@ -358,12 +372,12 @@ func (p *Packfile) init() error {
 			}
 			p.id = id
 		} else {
-			_, err := p.scanner.Seek(-int64(p.objectIDSize), io.SeekEnd)
+			_, err := p.scanner.Seek(-int64(p.objectFormat.Size()), io.SeekEnd)
 			if err != nil {
 				p.onceErr = err
 				return
 			}
-			p.id.ResetBySize(p.objectIDSize)
+			p.id.ResetBySize(p.objectFormat.Size())
 			_, err = p.id.ReadFrom(p.scanner)
 			if err != nil {
 				p.onceErr = err
@@ -467,11 +481,10 @@ func (p *Packfile) objectFromHeader(oh *ObjectHeader) (plumbing.EncodedObject, e
 }
 
 func (p *Packfile) getMemoryObject(oh *ObjectHeader) (plumbing.EncodedObject, error) {
-	of := format.SHA1
-	if p.objectIDSize == format.SHA256.Size() {
-		of = format.SHA256
+	h, err := plumbing.NewObjectHasher(p.objectFormat)
+	if err != nil {
+		return nil, err
 	}
-	h := plumbing.FromObjectFormat(of)
 	obj := plumbing.NewMemoryObject(h)
 
 	obj.SetSize(oh.Size)

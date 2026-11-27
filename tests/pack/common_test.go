@@ -1,7 +1,6 @@
 package pack_test
 
 import (
-	"crypto"
 	"io"
 
 	"github.com/go-git/go-billy/v6"
@@ -32,7 +31,7 @@ type packHandler[T int64OrUint64] interface {
 }
 
 func newPackfileOpts(pack, idx billy.File, opts ...packfile.PackfileOption) packHandler[int64] {
-	i := idxfile.NewMemoryIndex(crypto.SHA1.Size())
+	i := idxfile.NewMemoryIndex(hash.SHA1)
 
 	_, err := pack.Seek(0, io.SeekStart)
 	if err != nil {
@@ -43,7 +42,7 @@ func newPackfileOpts(pack, idx billy.File, opts ...packfile.PackfileOption) pack
 		panic(err)
 	}
 
-	err = idxfile.NewDecoder(idx, hash.New(crypto.SHA1)).Decode(i)
+	err = idxfile.NewDecoder(idx).Decode(i)
 	if err != nil {
 		panic(err)
 	}

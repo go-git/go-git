@@ -42,12 +42,12 @@ func TestEncode(t *testing.T) {
 	}
 
 	buf := bytes.NewBuffer(nil)
-	e := NewEncoder(buf, crypto.SHA1.New())
+	e := NewEncoder(buf)
 	err := e.Encode(idx)
 	assert.NoError(t, err)
 
 	output := &Index{}
-	d := NewDecoder(buf, crypto.SHA1.New())
+	d := NewDecoder(buf)
 	err = d.Decode(output)
 	assert.NoError(t, err)
 
@@ -84,11 +84,11 @@ func TestEncodeLongName(t *testing.T) {
 	}
 
 	buf := bytes.NewBuffer(nil)
-	err := NewEncoder(buf, crypto.SHA1.New()).Encode(idx)
+	err := NewEncoder(buf).Encode(idx)
 	require.NoError(t, err)
 
 	output := &Index{}
-	err = NewDecoder(buf, crypto.SHA1.New()).Decode(output)
+	err = NewDecoder(buf).Decode(output)
 	require.NoError(t, err)
 
 	require.Len(t, output.Entries, 2)
@@ -131,12 +131,12 @@ func TestEncodeSortedByNameThenStage(t *testing.T) {
 	}
 
 	buf := bytes.NewBuffer(nil)
-	e := NewEncoder(buf, crypto.SHA1.New())
+	e := NewEncoder(buf)
 	err := e.Encode(idx)
 	assert.NoError(t, err)
 
 	output := &Index{}
-	d := NewDecoder(buf, crypto.SHA1.New())
+	d := NewDecoder(buf)
 	err = d.Decode(output)
 	assert.NoError(t, err)
 
@@ -196,12 +196,12 @@ func TestEncodeV4(t *testing.T) {
 	}
 
 	buf := bytes.NewBuffer(nil)
-	e := NewEncoder(buf, crypto.SHA1.New())
+	e := NewEncoder(buf)
 	err := e.Encode(idx)
 	require.NoError(t, err)
 
 	output := &Index{}
-	d := NewDecoder(buf, crypto.SHA1.New())
+	d := NewDecoder(buf)
 	err = d.Decode(output)
 	require.NoError(t, err)
 
@@ -219,7 +219,7 @@ func TestEncodeUnsupportedVersion(t *testing.T) {
 	idx := &Index{Version: 5}
 
 	buf := bytes.NewBuffer(nil)
-	e := NewEncoder(buf, crypto.SHA1.New())
+	e := NewEncoder(buf)
 	err := e.Encode(idx)
 	assert.Equal(t, ErrUnsupportedVersion, err)
 }
@@ -232,12 +232,12 @@ func TestEncodeWithIntentToAddUnsupportedVersion(t *testing.T) {
 	}
 
 	buf := bytes.NewBuffer(nil)
-	e := NewEncoder(buf, crypto.SHA1.New())
+	e := NewEncoder(buf)
 	err := e.Encode(idx)
 	assert.NoError(t, err)
 
 	output := &Index{}
-	d := NewDecoder(buf, crypto.SHA1.New())
+	d := NewDecoder(buf)
 	err = d.Decode(output)
 	assert.NoError(t, err)
 
@@ -253,12 +253,12 @@ func TestEncodeWithSkipWorktreeUnsupportedVersion(t *testing.T) {
 	}
 
 	buf := bytes.NewBuffer(nil)
-	e := NewEncoder(buf, crypto.SHA1.New())
+	e := NewEncoder(buf)
 	err := e.Encode(idx)
 	assert.NoError(t, err)
 
 	output := &Index{}
-	d := NewDecoder(buf, crypto.SHA1.New())
+	d := NewDecoder(buf)
 	err = d.Decode(output)
 	assert.NoError(t, err)
 
@@ -312,7 +312,7 @@ func TestEncodeSkipHash(t *testing.T) {
 			}
 
 			buf := bytes.NewBuffer(nil)
-			e := NewEncoder(buf, tc.hash.New(), WithSkipHash())
+			e := NewEncoder(buf, WithObjectFormat(formatOf(tc.hash)), WithSkipHash())
 			err := e.Encode(idx)
 			require.NoError(t, err)
 
@@ -324,14 +324,14 @@ func TestEncodeSkipHash(t *testing.T) {
 			// A normal decoder accepts the null checksum, matching git's
 			// index.skipHash read behaviour.
 			output := &Index{}
-			d := NewDecoder(bytes.NewReader(raw), tc.hash.New())
+			d := NewDecoder(bytes.NewReader(raw), WithObjectFormat(formatOf(tc.hash)))
 			err = d.Decode(output)
 			require.NoError(t, err)
 			assert.EqualExportedValues(t, idx, output)
 
 			// A skipHash decoder must accept it and recover the entries.
 			output = &Index{}
-			d = NewDecoder(bytes.NewReader(raw), tc.hash.New(), WithSkipHash())
+			d = NewDecoder(bytes.NewReader(raw), WithObjectFormat(formatOf(tc.hash)), WithSkipHash())
 			err = d.Decode(output)
 			require.NoError(t, err)
 

@@ -1,7 +1,6 @@
 package packfile_test
 
 import (
-	"crypto"
 	"io"
 	"math"
 	"testing"
@@ -252,13 +251,6 @@ func TestSize(t *testing.T) {
 	})
 }
 
-func objectFormatHash(format string) crypto.Hash {
-	if format == "sha256" {
-		return crypto.SHA256
-	}
-	return crypto.SHA1
-}
-
 func getIndexFromFixture(t testing.TB, f *fixtures.Fixture) idxfile.Index {
 	t.Helper()
 
@@ -266,9 +258,9 @@ func getIndexFromFixture(t testing.TB, f *fixtures.Fixture) idxfile.Index {
 	require.NoError(t, err)
 	defer idxFile.Close()
 
-	h := objectFormatHash(f.ObjectFormat)
-	idx := idxfile.NewMemoryIndex(h.Size())
-	require.NoError(t, idxfile.NewDecoder(idxFile, hash.New(h)).Decode(idx))
+	format := hash.ObjectFormat(f.ObjectFormat)
+	idx := idxfile.NewMemoryIndex(format)
+	require.NoError(t, idxfile.NewDecoder(idxFile).Decode(idx))
 	return idx
 }
 
@@ -284,7 +276,7 @@ func newPackfile(t testing.TB, f *fixtures.Fixture) *packfile.Packfile {
 		packfile.WithFs(osfs.New(t.TempDir())),
 	}
 	if f.ObjectFormat == "sha256" {
-		opts = append(opts, packfile.WithObjectIDSize(config.SHA256.Size()))
+		opts = append(opts, packfile.WithObjectFormat(config.SHA256))
 	}
 
 	return packfile.NewPackfile(pf, opts...)
@@ -314,7 +306,7 @@ func BenchmarkGetByOffset(b *testing.B) {
 					packfile.WithCache(c),
 				}
 				if f.ObjectFormat == "sha256" {
-					opts = append(opts, packfile.WithObjectIDSize(config.SHA256.Size()))
+					opts = append(opts, packfile.WithObjectFormat(config.SHA256))
 				}
 				return benchmarkGetByOffset(entries, packfile.NewPackfile(pf1, opts...))
 			}())
@@ -329,7 +321,7 @@ func BenchmarkGetByOffset(b *testing.B) {
 					packfile.WithIdx(idx),
 				}
 				if f.ObjectFormat == "sha256" {
-					opts = append(opts, packfile.WithObjectIDSize(config.SHA256.Size()))
+					opts = append(opts, packfile.WithObjectFormat(config.SHA256))
 				}
 				return benchmarkGetByOffset(entries, packfile.NewPackfile(pf2, opts...))
 			}())

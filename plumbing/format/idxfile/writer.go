@@ -8,7 +8,7 @@ import (
 	"sync"
 
 	"github.com/go-git/go-git/v6/plumbing"
-	formatcfg "github.com/go-git/go-git/v6/plumbing/format/config"
+	"github.com/go-git/go-git/v6/plumbing/hash"
 	"github.com/go-git/go-git/v6/utils/binary"
 )
 
@@ -108,7 +108,7 @@ func (w *Writer) createIndex() (*MemoryIndex, error) {
 		return nil, fmt.Errorf("the index still hasn't finished building")
 	}
 
-	idx := NewMemoryIndex(w.checksum.Size())
+	idx := NewMemoryIndex(w.checksum.Format())
 	w.index = idx
 
 	sort.Sort(w.objects)
@@ -130,7 +130,8 @@ func (w *Writer) createIndex() (*MemoryIndex, error) {
 	bucket := -1
 	for i, o := range w.objects {
 		if o.Hash.Size() != w.checksum.Size() {
-			return nil, fmt.Errorf("%w: %d-byte object hash, want %d", formatcfg.ErrObjectFormatMismatch, o.Hash.Size(), w.checksum.Size())
+			return nil, fmt.Errorf("%w: %s id %s in a %s idx",
+				hash.ErrObjectFormatMismatch, o.Hash.Format(), o.Hash, w.checksum.Format())
 		}
 
 		fan := o.Hash.Bytes()[0]
