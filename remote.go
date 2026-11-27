@@ -1348,51 +1348,30 @@ func checkFastForwardUpdate(s storer.EncodedObjectStorer, remoteRefs storer.Refe
 
 // isFastForward reports whether newHash is a descendant of old in the commit
 // graph stored in s. shallows is the list of commits that act as boundary
-// nodes for a shallow clone; commits reachable only through those boundaries
-// are not locally available.
-//
-// When shallows are present and the ancestry of newHash cannot be fully
-// traced back to old using only local commits, we conservatively return
-// true (assume fast-forward) to avoid a false negative caused by the
-// shallow boundary. This mirrors git(1)'s behavior for shallow fetches:
-// ancestry checks are relaxed once history is truncated, at the cost of
-// not being able to prove fast-forward strictly from local data.
+// nodes for a shallow clone. git grafts a shallow commit into a parentless
+// one, so the walk visits a boundary but never follows its parents, which the
+// repository does not hold.
 func isFastForward(s storer.EncodedObjectStorer, old, newHash plumbing.Hash, shallows []plumbing.Hash) (bool, error) {
 	c, err := object.GetCommit(s, newHash)
 	if err != nil {
 		return false, err
 	}
 
-	// Build a set of shallow commits so we can detect when the walk actually
-	// reaches a shallow boundary (as opposed to merely knowing shallows exist).
-	shallowsSet := make(map[plumbing.Hash]struct{}, len(shallows))
+	shallowSet := make(map[plumbing.Hash]struct{}, len(shallows))
 	for _, sh := range shallows {
-		shallowsSet[sh] = struct{}{}
+		shallowSet[sh] = struct{}{}
 	}
 
-	// For each known shallow commit, mark its parent hashes as boundaries so
-	// the walker never tries to load commits that are not stored locally.
-	parentsToIgnore := make([]plumbing.Hash, 0, len(shallows))
-	for _, sh := range shallows {
-		shallowCommit, err := object.GetCommit(s, sh)
-		if err != nil {
-			if errors.Is(err, plumbing.ErrObjectNotFound) {
-				// Shallow marker may reference a commit we no longer have; skip.
-				continue
-			}
-			return false, err
-		}
-		parentsToIgnore = append(parentsToIgnore, shallowCommit.ParentHashes...)
-	}
+	isShallow := object.CommitFilter(func(c *object.Commit) bool {
+		_, ok := shallowSet[c.Hash]
+		return ok
+	})
+
+	iter := object.NewFilterCommitIter(c, nil, &isShallow)
+	defer iter.Close()
 
 	found := false
-	boundedByShallow := false
-	iter := object.NewCommitPreorderIter(c, nil, parentsToIgnore)
 	err = iter.ForEach(func(c *object.Commit) error {
-		if _, isShallow := shallowsSet[c.Hash]; isShallow {
-			// The walk reached a shallow commit; history is truncated here.
-			boundedByShallow = true
-		}
 		if c.Hash != old {
 			return nil
 		}
@@ -1403,12 +1382,7 @@ func isFastForward(s storer.EncodedObjectStorer, old, newHash plumbing.Hash, sha
 	if err != nil {
 		return false, err
 	}
-	if !found && boundedByShallow {
-		// The walk was bounded by shallow markers and could not reach `old`.
-		// We cannot disprove fast-forward from local data alone, so allow the
-		// update. This matches the behaviour of git(1) for shallow fetches.
-		return true, nil
-	}
+
 	return found, nil
 }
 
