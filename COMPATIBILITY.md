@@ -220,6 +220,7 @@ compatibility status with go-git.
 | `config`        | `--local`                   | ✅     | Read and write per-repository (`.git/config`). |          |
 | `config`        | `--global` <br/> `--system` | ✅     | Read-only.                                     |          |
 | `config`        | `--worktree`                | ✅     | Read and write per-worktree (`.git/worktrees/<name>/config.worktree`). Requires `extensions.worktreeConfig=true`. |          |
+| `config`        | `[section.subsection]`      | ✅     | The legacy header form is read as `[section "subsection"]`, both names lowercased, as in git. These are refused although git accepts them: an empty section or subsection name (`[.x]`, `[x.]`), a header that mixes forms (`[a.b "C"]`), one starting with a digit or `-` (`[1a.b]`, `[-a.b]`), and one followed by a key on the same line (`[a.b]k=v`). Written back, the quoted form is used. |          |
 | `gitignore`     |                             | ✅     |                                                |          |
 | `gitattributes` |                             | ✅     |                                                |          |
 | `git-worktree`  | `add`, `remove` and `list`  | ⚠️ (partial) | Not all flags nor subcommands are supported.   | - [worktrees](_examples/worktrees/main.go) |
