@@ -10,6 +10,7 @@ import (
 
 	"github.com/go-git/go-git/v6/plumbing"
 	formatcfg "github.com/go-git/go-git/v6/plumbing/format/config"
+	"github.com/go-git/go-git/v6/plumbing/hash"
 )
 
 type graphTestReader struct{ *bytes.Reader }
@@ -122,15 +123,15 @@ func TestEncodeRejectsWrongObjectWidthsBeforeWriting(t *testing.T) {
 	}
 }
 
-func TestInvalidObjectFormat(t *testing.T) {
+func TestUnsupportedObjectFormat(t *testing.T) {
 	t.Parallel()
 	opts := WithObjectFormat(formatcfg.ObjectFormat("invalid"))
 	_, err := OpenFileIndex(graphTestReader{bytes.NewReader(nil)}, opts)
-	require.ErrorIs(t, err, formatcfg.ErrInvalidObjectFormat)
+	require.ErrorIs(t, err, hash.ErrUnsupportedHashFunction)
 	_, err = OpenChainFile(strings.NewReader(""), opts)
-	require.ErrorIs(t, err, formatcfg.ErrInvalidObjectFormat)
+	require.ErrorIs(t, err, hash.ErrUnsupportedHashFunction)
 	var b bytes.Buffer
 	err = NewEncoder(&b, opts).Encode(NewMemoryIndex())
-	require.ErrorIs(t, err, formatcfg.ErrInvalidObjectFormat)
+	require.ErrorIs(t, err, hash.ErrUnsupportedHashFunction)
 	require.Zero(t, b.Len())
 }

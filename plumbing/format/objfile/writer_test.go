@@ -14,6 +14,7 @@ import (
 
 	"github.com/go-git/go-git/v6/plumbing"
 	format "github.com/go-git/go-git/v6/plumbing/format/config"
+	"github.com/go-git/go-git/v6/plumbing/hash"
 )
 
 type SuiteWriter struct {
@@ -135,4 +136,15 @@ func TestWriteHeaderBoundIsConstantForKnownTypes(t *testing.T) {
 			t.Fatalf("ObjectType %q produces %d-byte header, exceeds cap %d", ot, n, maxHeaderLen)
 		}
 	}
+}
+
+func TestWriteHeaderUnknownObjectFormat(t *testing.T) {
+	t.Parallel()
+
+	var buf bytes.Buffer
+	w := NewWriter(&buf, format.ObjectFormat("sha512"))
+	err := w.WriteHeader(plumbing.BlobObject, 0)
+	assert.ErrorIs(t, err, hash.ErrUnsupportedHashFunction)
+	assert.True(t, w.Hash().IsZero())
+	assert.NoError(t, w.Close())
 }

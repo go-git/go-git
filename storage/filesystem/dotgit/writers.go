@@ -29,6 +29,10 @@ var _ storer.PackReader = (*PackWriter)(nil)
 
 var errReadPackCalled = errors.New("dotgit: ReadPack already called")
 
+// errObjectHeaderNotWritten is returned when an [ObjectWriter] is closed
+// without a header having been written, so it holds no object to save.
+var errObjectHeaderNotWritten = errors.New("dotgit: object closed before its header was written")
+
 // A PackWriter writes a packfile to a temporary file, building its index as
 // the data arrives through [PackWriter.Write] or [PackWriter.ReadPack].
 // [PackWriter.Close] moves the pack and its index into place.
@@ -709,6 +713,14 @@ func (w *ObjectWriter) Close() error {
 
 func (w *ObjectWriter) save() error {
 	h := w.Hash()
+	if h.IsZero() {
+		// WriteHeader failed or was never called, so there is no
+		// object to save.
+		if err := w.fs.Remove(w.f.Name()); err != nil {
+			return err
+		}
+		return errObjectHeaderNotWritten
+	}
 	hex := h.String()
 	file := w.fs.Join(objectsPath, hex[0:2], hex[2:h.HexSize()])
 

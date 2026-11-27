@@ -88,9 +88,12 @@ func (r *ServerResponse) decodeACKLine(line []byte) (err error) {
 		return fmt.Errorf("malformed ACK %q", line)
 	}
 
-	var ack ACK
-	// TODO: Dynamic hash size and sha256 support
-	ack.Hash = plumbing.NewHash(string(bytes.TrimSuffix(parts[1], []byte("\n"))))
+	h, ok := plumbing.FromHex(string(bytes.TrimSuffix(parts[1], []byte("\n"))))
+	if !ok {
+		return fmt.Errorf("malformed ACK %q", line)
+	}
+
+	ack := ACK{Hash: h}
 	err = io.EOF
 
 	if len(parts) > 2 {

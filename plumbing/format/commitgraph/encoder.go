@@ -26,10 +26,10 @@ func NewEncoder(w io.Writer, opts ...Option) *Encoder {
 	return &Encoder{Writer: io.MultiWriter(w, h), hash: h, optionErr: err}
 }
 
-// Encode writes an index into the commit-graph file. It returns
-// formatcfg.ErrInvalidObjectFormat if the Encoder was created with an invalid
-// object format, and ErrObjectFormatMismatch if a commit, tree or parent ID
-// has another width than that format; neither writes any bytes.
+// Encode writes an index into the commit-graph file. It returns an error
+// wrapping hash.ErrUnsupportedHashFunction if the Encoder was created with an
+// unsupported object format, and ErrObjectFormatMismatch if a commit, tree or
+// parent ID has another width than that format. Neither writes any bytes.
 func (e *Encoder) Encode(idx Index) error {
 	if e.optionErr != nil {
 		return e.optionErr

@@ -12,6 +12,7 @@ import (
 
 	"github.com/go-git/go-git/v6/plumbing"
 	formatcfg "github.com/go-git/go-git/v6/plumbing/format/config"
+	"github.com/go-git/go-git/v6/plumbing/hash"
 	"github.com/go-git/go-git/v6/plumbing/object"
 	"github.com/go-git/go-git/v6/plumbing/storer"
 	"github.com/go-git/go-git/v6/utils/ioutil"
@@ -71,7 +72,7 @@ func decodeTraversalCommit(obj plumbing.EncodedObject, id plumbing.Hash) (c *tra
 		return nil, object.ErrUnsupportedObject
 	}
 	if id.Size() != formatcfg.SHA1.Size() && id.Size() != formatcfg.SHA256.Size() {
-		return nil, formatcfg.ErrInvalidObjectFormat
+		return nil, fmt.Errorf("%w: object id of %d bytes", hash.ErrUnsupportedHashFunction, id.Size())
 	}
 
 	reader, err := obj.Reader()

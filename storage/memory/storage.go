@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/go-git/go-git/v6/config"
+	"github.com/go-git/go-git/v6/internal/hashutil"
 	"github.com/go-git/go-git/v6/plumbing"
 	formatcfg "github.com/go-git/go-git/v6/plumbing/format/config"
 	"github.com/go-git/go-git/v6/plumbing/format/index"
@@ -66,20 +67,31 @@ func NewStorage(o ...StorageOption) *Storage {
 		cfg, _ := s.Config()
 		cfg.Extensions.ObjectFormat = opts.objectFormat
 		cfg.Core.RepositoryFormatVersion = formatcfg.Version1
-		s.oh = plumbing.FromObjectFormat(opts.objectFormat)
-	} else {
-		s.oh = plumbing.FromObjectFormat(formatcfg.DefaultObjectFormat)
 	}
+
+	oh, err := plumbing.NewObjectHasher(opts.objectFormat)
+	if err != nil {
+		// NewStorage cannot return an error. An unsupported format set
+		// through WithObjectFormat keeps the default hasher, as
+		// documented on WithObjectFormat.
+		oh, _ = plumbing.NewObjectHasher(formatcfg.DefaultObjectFormat)
+	}
+	s.oh = oh
 
 	return s
 }
 
 // SetObjectFormat configures the object format for this storage.
+// [formatcfg.UnsetObjectFormat] is handled as
+// [formatcfg.DefaultObjectFormat]. Any other format that is neither
+// SHA-1 nor SHA-256 returns an error wrapping
+// [github.com/go-git/go-git/v6/plumbing/hash.ErrUnsupportedHashFunction].
 func (s *Storage) SetObjectFormat(of formatcfg.ObjectFormat) error {
-	switch of {
-	case formatcfg.SHA1, formatcfg.SHA256:
-	default:
-		return fmt.Errorf("invalid object format: %s", of)
+	if of == formatcfg.UnsetObjectFormat {
+		of = formatcfg.DefaultObjectFormat
+	}
+	if err := hashutil.Check(of); err != nil {
+		return err
 	}
 
 	// Presently, storage only supports a single object format at a
@@ -97,11 +109,16 @@ func (s *Storage) SetObjectFormat(of formatcfg.ObjectFormat) error {
 		return nil
 	}
 
+	oh, err := plumbing.NewObjectHasher(of)
+	if err != nil {
+		return err
+	}
+
 	cfg, _ := s.Config()
 	cfg.Extensions.ObjectFormat = of
 	cfg.Core.RepositoryFormatVersion = formatcfg.Version1
 	s.options.objectFormat = of
-	s.oh = plumbing.FromObjectFormat(of)
+	s.oh = oh
 	return nil
 }
 

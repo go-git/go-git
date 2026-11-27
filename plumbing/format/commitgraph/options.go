@@ -3,6 +3,7 @@ package commitgraph
 import (
 	"crypto"
 
+	"github.com/go-git/go-git/v6/internal/hashutil"
 	formatcfg "github.com/go-git/go-git/v6/plumbing/format/config"
 )
 
@@ -18,8 +19,8 @@ type options struct {
 // config's Extensions.ObjectFormat. The default, including UnsetObjectFormat,
 // is SHA-1. Readers reject graphs and chains of another format, and the
 // Encoder rejects object IDs of another width, with ErrObjectFormatMismatch.
-// Any format other than SHA-1 or SHA-256 makes readers and Encode return
-// formatcfg.ErrInvalidObjectFormat.
+// Any format other than SHA-1 or SHA-256 makes readers and Encode return an
+// error wrapping hash.ErrUnsupportedHashFunction.
 func WithObjectFormat(of formatcfg.ObjectFormat) Option {
 	return func(o *options) {
 		o.objectFormat = of
@@ -48,8 +49,8 @@ func readOptions(opts []Option) (options, error) {
 	if o.objectFormat == formatcfg.UnsetObjectFormat {
 		o.objectFormat = formatcfg.DefaultObjectFormat
 	}
-	if o.objectFormat != formatcfg.SHA1 && o.objectFormat != formatcfg.SHA256 {
-		return o, formatcfg.ErrInvalidObjectFormat
+	if err := hashutil.Check(o.objectFormat); err != nil {
+		return o, err
 	}
 	return o, nil
 }
