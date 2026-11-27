@@ -129,6 +129,11 @@ hunks and errors. Each backend constructs its own hunks.
 `Patch.Stats()` returns `FileStats` from the raw edits, not display filters.
 Comparison errors reach the caller when it creates the patch.
 
+The [optional go-xdiff adapter](x/diff/xdiff) has a separate Go module.
+The core module does not import or require it. Applications that select
+the adapter must review the go-xdiff license obligations. Module separation
+does not remove those obligations.
+
 Configure algorithms, section detection, and display filters on the selected
 backend. `NewDefaultWithOptions` accepts a custom section detector.
 Use `UnifiedEncoder.SetHunkOptions` for context and inter-hunk context.
