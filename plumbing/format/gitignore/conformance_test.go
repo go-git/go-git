@@ -4,6 +4,7 @@ import (
 	"errors"
 	"os"
 	"os/exec"
+	"runtime"
 	"slices"
 	"strings"
 	"sync"
@@ -325,6 +326,13 @@ func (s *ConformanceSuite) TestWildmatchSlashSemantics() {
 		{"*/bar/**", "foo/bar/baz/x", true, "mixed single double star"},
 		{"*/bar/**", "deep/foo/bar/baz/x", false, "mixed stars wrong depth"},
 		{"**/bar/*/*", "deep/foo/bar/baz/x", true, "double star with fixed depth"},
+		{"**/a/b", "a/a/b", true, "double star tries a later component"},
+		{"**/build/out", "build/build/out", true, "double star skips a first match that leads nowhere"},
+		{"**/*/a", "a/b/a", true, "double star before a star segment"},
+		{"/**/a/f", "a/a/f", true, "anchored double star tries a later component"},
+		{"**/a/**/a/b", "a/a/a/b", true, "two double stars, both skipping"},
+		{"**/a/**/a/b", "a/x/b", false, "two double stars, second segment missing"},
+		{"**/a/b", "a/a/c", false, "double star with no component that fits"},
 
 		// Path-relative patterns (t3070's pathmatch entries).
 		{"fo", "foo", false, "prefix no match"},
@@ -1105,5 +1113,32 @@ func TestOracleVersionHint(t *testing.T) {
 		if got := oracleVersionHint([]string{p}); got != "" {
 			t.Errorf("oracleVersionHint(%q) = %q; the shape is unaffected and must not blame the Git version", p, got)
 		}
+	}
+}
+
+// TestTrailingSpaces covers the spaces at the end of a pattern line: they are
+// dropped unless a backslash escapes them, and a backslash escapes whatever
+// byte follows it, another backslash included.
+func (s *ConformanceSuite) TestTrailingSpaces() {
+	if runtime.GOOS == "windows" {
+		s.T().Skip("the names end in a space or a backslash, which a Windows path cannot carry")
+	}
+	tests := []struct {
+		pattern  string
+		text     string
+		expected bool
+		desc     string
+	}{
+		{"foo  ", "foo", true, "unescaped trailing spaces are dropped"},
+		{`foo\ `, "foo ", true, "an escaped trailing space is kept"},
+		{`foo\ `, "foo", false, "an escaped trailing space is required"},
+		{`foo\  `, "foo ", true, "only the spaces after an escaped one are dropped"},
+		{`foo\  `, "foo  ", false, "the second space is not part of the name"},
+		{`foo\\ `, `foo\`, true, "a space after an escaped backslash is dropped"},
+		{`foo\\ `, `foo\ `, false, "and so is not part of the name"},
+		{`foo \ `, "foo  ", true, "an escaped space protects the ones before it"},
+	}
+	for _, tt := range tests {
+		s.testMatch(tt.pattern, tt.text, tt.expected, tt.desc)
 	}
 }

@@ -3938,6 +3938,34 @@ func (s *WorktreeSuite) TestAddAll() {
 	s.Equal(Untracked, file3.Worktree)
 }
 
+// A pattern that ends in a slash, or in "/**", is about a directory and what
+// is below it. A file of that name is not excluded.
+func (s *WorktreeSuite) TestAddAllExcludesMatchFilesAsFiles() {
+	fs := memfs.New()
+	w := &Worktree{
+		r:          s.Repository,
+		filesystem: newWorktreeFilesystem(fs, defaultProtectNTFS(), defaultProtectHFS()),
+	}
+	s.Require().NoError(w.Checkout(&CheckoutOptions{Force: true}))
+
+	for _, name := range []string{"build", "cache", "out/artifact"} {
+		s.Require().NoError(util.WriteFile(w.filesystem, name, []byte(name), 0o644))
+	}
+	w.Excludes = []gitignore.Pattern{
+		gitignore.ParsePattern("build/", nil),
+		gitignore.ParsePattern("cache/**", nil),
+		gitignore.ParsePattern("out/", nil),
+	}
+
+	s.Require().NoError(w.AddWithOptions(&AddOptions{All: true}))
+
+	status, err := w.Status()
+	s.Require().NoError(err)
+	s.Equal(Added, status.File("build").Staging, "a file named like an excluded directory")
+	s.Equal(Added, status.File("cache").Staging, "a file named like a directory whose content is excluded")
+	s.Equal(Untracked, status.File("out/artifact").Staging, "a file below an excluded directory")
+}
+
 func (s *WorktreeSuite) TestAddGlob() {
 	fs := memfs.New()
 	w := &Worktree{

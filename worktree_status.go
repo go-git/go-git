@@ -524,7 +524,7 @@ func (w *Worktree) doAddFile(cfg *config.Config, idx *index.Index, s Status, pat
 	if len(ignorePattern) > 0 {
 		m := gitignore.NewMatcher(ignorePattern)
 		matchPath := strings.Split(path, string(os.PathSeparator))
-		if m.Match(matchPath, true) {
+		if m.Match(matchPath, false) {
 			// ignore
 			return false, h, nil
 		}
