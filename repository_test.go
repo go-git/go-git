@@ -3150,6 +3150,233 @@ func (s *RepositorySuite) TestLogAllLimitForEach() {
 	s.Equal(2, expectedIndex)
 }
 
+func (s *RepositorySuite) TestLogStopAtIsInclusive() {
+	r, _ := Init(memory.NewStorage())
+	defer func() { _ = r.Close() }()
+	err := r.clone(context.Background(), &CloneOptions{
+		URL: s.GetBasicLocalRepositoryURL(),
+	})
+	s.NoError(err)
+
+	stopAt := plumbing.NewHash("a5b8b09e2f8fcb0bb99d3ccb0958157b40890d69")
+	cIter, err := r.Log(&LogOptions{
+		Order:  LogOrderCommitterTime,
+		StopAt: stopAt,
+	})
+	s.NoError(err)
+	defer cIter.Close()
+
+	var got []plumbing.Hash
+	err = cIter.ForEach(func(c *object.Commit) error {
+		got = append(got, c.Hash)
+		return nil
+	})
+	s.NoError(err)
+
+	s.Equal([]plumbing.Hash{
+		plumbing.NewHash("6ecf0ef2c2dffb796033e5a02219af86ec6584e5"),
+		plumbing.NewHash("918c48b83bd081e863dbe1b80f8998f058cd8294"),
+		plumbing.NewHash("af2d6a6954d532f8ffb47615169c8fdf9d383a1a"),
+		plumbing.NewHash("1669dce138d9b841a518c64b10914d88f5e488ea"),
+		stopAt,
+	}, got)
+}
+
+func (s *RepositorySuite) TestLogStopAtNextReturnsErrStop() {
+	r, _ := Init(memory.NewStorage())
+	defer func() { _ = r.Close() }()
+	err := r.clone(context.Background(), &CloneOptions{
+		URL: s.GetBasicLocalRepositoryURL(),
+	})
+	s.NoError(err)
+
+	stopAt := plumbing.NewHash("a5b8b09e2f8fcb0bb99d3ccb0958157b40890d69")
+	cIter, err := r.Log(&LogOptions{
+		Order:  LogOrderCommitterTime,
+		StopAt: stopAt,
+	})
+	s.NoError(err)
+	defer cIter.Close()
+
+	for _, want := range []string{
+		"6ecf0ef2c2dffb796033e5a02219af86ec6584e5",
+		"918c48b83bd081e863dbe1b80f8998f058cd8294",
+		"af2d6a6954d532f8ffb47615169c8fdf9d383a1a",
+		"1669dce138d9b841a518c64b10914d88f5e488ea",
+	} {
+		commit, err := cIter.Next()
+		s.Require().NoError(err)
+		s.Equal(want, commit.Hash.String())
+	}
+
+	commit, err := cIter.Next()
+	s.ErrorIs(err, storer.ErrStop)
+	s.Require().NotNil(commit)
+	s.Equal(stopAt, commit.Hash)
+}
+
+func (s *RepositorySuite) TestLogStopAtDroppedByFilterDoesNotStop() {
+	r, _ := Init(memory.NewStorage())
+	defer func() { _ = r.Close() }()
+	err := r.clone(context.Background(), &CloneOptions{
+		URL: s.GetBasicLocalRepositoryURL(),
+	})
+	s.NoError(err)
+
+	fileName := "binary.jpg"
+	cutoff := time.Unix(1427802400, 0)
+
+	tests := []struct {
+		name string
+		opts LogOptions
+		want []string
+	}{
+		{
+			name: "FileName",
+			opts: LogOptions{
+				FileName: &fileName,
+				StopAt:   plumbing.NewHash("af2d6a6954d532f8ffb47615169c8fdf9d383a1a"),
+			},
+			want: []string{"35e85108805c84807bc66a02d91535e1e24b38b9"},
+		},
+		{
+			name: "PathFilter",
+			opts: LogOptions{
+				PathFilter: func(p string) bool { return p == fileName },
+				StopAt:     plumbing.NewHash("af2d6a6954d532f8ffb47615169c8fdf9d383a1a"),
+			},
+			want: []string{"35e85108805c84807bc66a02d91535e1e24b38b9"},
+		},
+		{
+			name: "Since",
+			opts: LogOptions{
+				Since:  &cutoff,
+				StopAt: plumbing.NewHash("35e85108805c84807bc66a02d91535e1e24b38b9"),
+			},
+			want: []string{
+				"6ecf0ef2c2dffb796033e5a02219af86ec6584e5",
+				"918c48b83bd081e863dbe1b80f8998f058cd8294",
+				"af2d6a6954d532f8ffb47615169c8fdf9d383a1a",
+				"1669dce138d9b841a518c64b10914d88f5e488ea",
+				"a5b8b09e2f8fcb0bb99d3ccb0958157b40890d69",
+			},
+		},
+		{
+			name: "Until",
+			opts: LogOptions{
+				Until:  &cutoff,
+				StopAt: plumbing.NewHash("a5b8b09e2f8fcb0bb99d3ccb0958157b40890d69"),
+			},
+			want: []string{
+				"35e85108805c84807bc66a02d91535e1e24b38b9",
+				"b029517f6300c2da0f4b651b8642506cd6aaf45d",
+				"b8e471f58bcbca63b07bda20e428190409c2db47",
+			},
+		},
+	}
+
+	for _, tc := range tests {
+		s.Run(tc.name, func() {
+			cIter, err := r.Log(&tc.opts)
+			s.Require().NoError(err)
+			defer cIter.Close()
+
+			var got []string
+			err = cIter.ForEach(func(c *object.Commit) error {
+				got = append(got, c.Hash.String())
+				return nil
+			})
+			s.NoError(err)
+			s.Equal(tc.want, got)
+		})
+	}
+}
+
+func (s *RepositorySuite) TestLogOrderBFS() {
+	r, _ := Init(memory.NewStorage())
+	defer func() { _ = r.Close() }()
+	err := r.clone(context.Background(), &CloneOptions{
+		URL: s.GetBasicLocalRepositoryURL(),
+	})
+	s.NoError(err)
+
+	cIter, err := r.Log(&LogOptions{Order: LogOrderBFS})
+	s.NoError(err)
+	defer cIter.Close()
+
+	var got []string
+	err = cIter.ForEach(func(c *object.Commit) error {
+		got = append(got, c.Hash.String())
+		return nil
+	})
+	s.NoError(err)
+
+	s.Equal([]string{
+		"6ecf0ef2c2dffb796033e5a02219af86ec6584e5",
+		"918c48b83bd081e863dbe1b80f8998f058cd8294",
+		"af2d6a6954d532f8ffb47615169c8fdf9d383a1a",
+		"1669dce138d9b841a518c64b10914d88f5e488ea",
+		"35e85108805c84807bc66a02d91535e1e24b38b9",
+		"a5b8b09e2f8fcb0bb99d3ccb0958157b40890d69",
+		"b029517f6300c2da0f4b651b8642506cd6aaf45d",
+		"b8e471f58bcbca63b07bda20e428190409c2db47",
+	}, got)
+}
+
+// The expected hashes are the output of `git log --first-parent --format=%H`
+// from each starting commit.
+func (s *RepositorySuite) TestLogOrderFirstParent() {
+	r, _ := Init(memory.NewStorage())
+	defer func() { _ = r.Close() }()
+	err := r.clone(context.Background(), &CloneOptions{
+		URL: s.GetBasicLocalRepositoryURL(),
+	})
+	s.NoError(err)
+
+	tests := []struct {
+		from string
+		want []string
+	}{
+		{
+			from: "6ecf0ef2c2dffb796033e5a02219af86ec6584e5",
+			want: []string{
+				"6ecf0ef2c2dffb796033e5a02219af86ec6584e5",
+				"918c48b83bd081e863dbe1b80f8998f058cd8294",
+				"af2d6a6954d532f8ffb47615169c8fdf9d383a1a",
+				"1669dce138d9b841a518c64b10914d88f5e488ea",
+				"35e85108805c84807bc66a02d91535e1e24b38b9",
+				"b029517f6300c2da0f4b651b8642506cd6aaf45d",
+			},
+		},
+		{
+			from: "a5b8b09e2f8fcb0bb99d3ccb0958157b40890d69",
+			want: []string{
+				"a5b8b09e2f8fcb0bb99d3ccb0958157b40890d69",
+				"b029517f6300c2da0f4b651b8642506cd6aaf45d",
+			},
+		},
+	}
+
+	for _, tc := range tests {
+		s.Run(tc.from, func() {
+			cIter, err := r.Log(&LogOptions{
+				From:  plumbing.NewHash(tc.from),
+				Order: LogOrderFirstParent,
+			})
+			s.Require().NoError(err)
+			defer cIter.Close()
+
+			var got []string
+			err = cIter.ForEach(func(c *object.Commit) error {
+				got = append(got, c.Hash.String())
+				return nil
+			})
+			s.NoError(err)
+			s.Equal(tc.want, got)
+		})
+	}
+}
+
 func (s *RepositorySuite) TestLogLimitWithOtherParamsFail() {
 	r, _ := Init(memory.NewStorage())
 	defer func() { _ = r.Close() }()
