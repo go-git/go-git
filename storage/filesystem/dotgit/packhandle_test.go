@@ -137,7 +137,7 @@ func TestPackHandle_ClosesAllCachedHandles(t *testing.T) {
 		}
 		seen[h] = struct{}{}
 
-		pw, err := dot.NewObjectPack()
+		pw, err := dot.NewObjectPack(nil)
 		require.NoError(t, err)
 		pf, err := f.Packfile()
 		require.NoError(t, err)

@@ -53,7 +53,7 @@ func createCountedStorage(
 	raw := dotgit.New(base)
 	require.NoError(t, raw.Initialize())
 
-	pw, err := raw.NewObjectPack()
+	pw, err := raw.NewObjectPack(nil)
 	require.NoError(t, err)
 	pf, err := f.Packfile()
 	require.NoError(t, err)
@@ -121,7 +121,7 @@ func TestIntegration_ConcurrentObjectReads(t *testing.T) {
 	raw := dotgit.New(base)
 	require.NoError(t, raw.Initialize())
 
-	pw, err := raw.NewObjectPack()
+	pw, err := raw.NewObjectPack(nil)
 	require.NoError(t, err)
 	pf, err := f.Packfile()
 	require.NoError(t, err)
@@ -184,7 +184,7 @@ func TestIntegration_ReindexInvalidatesPackHandles(t *testing.T) {
 	dg := dotgit.NewWithOptions(base, opts)
 	require.NoError(t, dg.Initialize())
 
-	pw, err := dg.NewObjectPack()
+	pw, err := dg.NewObjectPack(nil)
 	require.NoError(t, err)
 	pf, err := f.Packfile()
 	require.NoError(t, err)
@@ -376,7 +376,7 @@ func TestDeleteKeepsPackTooNewToDeleteReadable(t *testing.T) {
 	dg := dotgit.New(osfs.New(t.TempDir()))
 	require.NoError(t, dg.Initialize())
 
-	pw, err := dg.NewObjectPack()
+	pw, err := dg.NewObjectPack(nil)
 	require.NoError(t, err)
 	pf, err := f.Packfile()
 	require.NoError(t, err)

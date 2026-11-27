@@ -83,7 +83,7 @@ func makeMultiPackFixture(tb testing.TB, nPacks, objPerPack int) (billy.Filesyst
 		// Stream the encoded pack into the on-disk repo via the
 		// PackWriter; this writes both the .pack and the .idx,
 		// matching what `git index-pack` produces.
-		pw, err := dg.NewObjectPack()
+		pw, err := dg.NewObjectPack(nil)
 		if err != nil {
 			tb.Fatalf("new object pack %d: %v", p, err)
 		}

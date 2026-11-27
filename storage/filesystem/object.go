@@ -444,10 +444,17 @@ func (s *ObjectStorage) NewEncodedObject() plumbing.EncodedObject {
 	return plumbing.NewMemoryObject(s.oh)
 }
 
-// PackfileWriter returns a writer for creating a new packfile.
+// LowMemoryMode returns true if low memory mode is enabled for this storage.
+func (s *ObjectStorage) LowMemoryMode() bool {
+	return !s.options.HighMemoryMode
+}
+
+// PackfileWriter returns a writer for creating a new packfile. The index build
+// runs in the storage's low-memory mode, so a clone does not hold every decoded
+// delta in heap for the length of the pack parse.
 func (s *ObjectStorage) PackfileWriter() (io.WriteCloser, error) {
 	return s.packfileWriter(func() (*dotgit.PackWriter, error) {
-		return s.dir.NewObjectPack()
+		return s.dir.NewObjectPack(s)
 	})
 }
 
@@ -456,7 +463,7 @@ func (s *ObjectStorage) PackfileWriter() (io.WriteCloser, error) {
 // out are understood to be promised rather than missing.
 func (s *ObjectStorage) PromisorPackfileWriter(marker string) (io.WriteCloser, error) {
 	return s.packfileWriter(func() (*dotgit.PackWriter, error) {
-		return s.dir.NewPromisorObjectPack(marker)
+		return s.dir.NewPromisorObjectPack(marker, s)
 	})
 }
 

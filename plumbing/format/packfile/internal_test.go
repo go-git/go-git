@@ -51,6 +51,77 @@ func TestParserRejectsDeepDeltaChain(t *testing.T) {
 	require.ErrorContains(t, err, "delta chain depth")
 }
 
+type lowMemoryProvider bool
+
+func (l lowMemoryProvider) LowMemoryMode() bool { return bool(l) }
+
+// heldContentObserver records the largest number of cached objects holding
+// inflated content each time the parser reports a resolved object.
+type heldContentObserver struct {
+	parser  *Parser
+	maxHeld int
+}
+
+func (o *heldContentObserver) OnHeader(uint32) error { return nil }
+
+func (o *heldContentObserver) OnInflatedObjectHeader(plumbing.ObjectType, int64, int64) error {
+	return nil
+}
+
+func (o *heldContentObserver) OnInflatedObjectContent(plumbing.Hash, int64, uint32, []byte) error {
+	held := 0
+	for _, oh := range o.parser.cache.oi {
+		if oh.content != nil {
+			held++
+		}
+	}
+	o.maxHeld = max(o.maxHeld, held)
+	return nil
+}
+
+func (o *heldContentObserver) OnFooter(plumbing.Hash) error { return nil }
+
+// Without a storage, a delta base can only be read back from the parser's
+// cache, so low-memory mode must keep it until its last delta is resolved
+// and no longer: a chain then holds a delta and its base, not the whole chain.
+func TestParserLowMemoryReleasesResolvedDeltaBases(t *testing.T) {
+	t.Parallel()
+
+	const chainDepth = 32
+	content := bytes.Repeat([]byte("low-memory delta chain payload "), 64)
+	objects := []testPackObject{{typ: plumbing.BlobObject, content: content}}
+	for i := 1; i <= chainDepth; i++ {
+		next := bytes.Clone(content)
+		next[i] ^= 0xff
+		obj := testPackObject{content: DiffDelta(content, next)}
+		if i%2 == 1 {
+			obj.typ = plumbing.OFSDeltaObject
+		} else {
+			obj.typ = plumbing.REFDeltaObject
+			obj.reference = testObjectHash(plumbing.BlobObject, content)
+		}
+		objects = append(objects, obj)
+		content = next
+	}
+	_, offsets := buildTestPack(t, objects...)
+	for i := 1; i <= chainDepth; i += 2 {
+		objects[i].offsetDeltaDistance = offsets[i] - offsets[i-1]
+	}
+	pack, rebuiltOffsets := buildTestPack(t, objects...)
+	require.Equal(t, offsets, rebuiltOffsets)
+
+	obs := &heldContentObserver{}
+	obs.parser = NewParser(bytes.NewReader(pack),
+		WithScannerObservers(obs),
+		WithLowMemoryCapable(lowMemoryProvider(true)))
+	require.True(t, obs.parser.lowMemoryMode)
+
+	_, err := obs.parser.Parse()
+	require.NoError(t, err)
+	assert.Len(t, obs.parser.cache.oi, chainDepth+1)
+	assert.LessOrEqual(t, obs.maxHeld, 2)
+}
+
 func TestObjectIterReturnsObjectNotFoundForMissingDeltaBase(t *testing.T) {
 	t.Parallel()
 

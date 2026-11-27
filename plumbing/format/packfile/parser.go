@@ -68,9 +68,18 @@ func growHint(n int64) int {
 // ErrParserConsumed without running. Construct a new Parser for each
 // pack you intend to decode.
 type Parser struct {
-	storage       storer.EncodedObjectStorer
-	cache         *parserCache
-	lowMemoryMode bool
+	storage           storer.EncodedObjectStorer
+	lowMemoryProvider LowMemoryCapable
+	cache             *parserCache
+	lowMemoryMode     bool
+
+	// pendingChildren counts, per parent, the delta children that have not
+	// been resolved yet: keyed by offset for OFS-deltas and by hash for
+	// REF-deltas. A parent's inflated content is freed as soon as its last
+	// pending child has been applied to it. Nil unless the parser runs in
+	// low-memory mode without a storage.
+	pendingChildren map[int64]int
+	pendingByHash   map[plumbing.Hash]int
 
 	scanner   *Scanner
 	observers []Observer
@@ -120,6 +129,10 @@ func NewParser(data io.Reader, opts ...ParserOption) *Parser {
 		p.lowMemoryMode = ok && lm.LowMemoryMode()
 	}
 
+	if p.lowMemoryProvider != nil {
+		p.lowMemoryMode = p.lowMemoryProvider.LowMemoryMode()
+	}
+
 	if p.scanner.seeker == nil {
 		p.lowMemoryMode = false
 	}
@@ -147,15 +160,19 @@ func (p *Parser) storeOrCache(oh *ObjectHeader) error {
 	}
 
 	if p.cache != nil {
-		o := oh
-		for p.lowMemoryMode && o.content != nil {
-			sync.PutBytesBuffer(o.content)
-			o.content = nil
+		if p.pendingChildren != nil {
+			p.releaseIfUnreferenced(oh)
+		} else {
+			o := oh
+			for p.lowMemoryMode && o.content != nil {
+				sync.PutBytesBuffer(o.content)
+				o.content = nil
 
-			if o.parent == nil || o.parent.content == nil {
-				break
+				if o.parent == nil || o.parent.content == nil {
+					break
+				}
+				o = o.parent
 			}
-			o = o.parent
 		}
 		p.cache.Add(oh)
 	}
@@ -171,6 +188,36 @@ func (p *Parser) resetCache(qty int) {
 	if p.cache != nil {
 		p.cache.Reset(qty)
 	}
+}
+
+// releaseIfUnreferenced frees o's inflated content unless a delta that has
+// not been resolved yet still names o as its base, by offset or by hash.
+func (p *Parser) releaseIfUnreferenced(o *ObjectHeader) {
+	if o == nil || o.content == nil {
+		return
+	}
+	if p.pendingChildren[o.Offset] > 0 || p.pendingByHash[o.Hash] > 0 {
+		return
+	}
+	sync.PutBytesBuffer(o.content)
+	o.content = nil
+}
+
+// resolvedChild notes that the delta c has been applied to its parent, and
+// frees the parent's content when c was the last delta waiting on it.
+func (p *Parser) resolvedChild(c *ObjectHeader) {
+	if p.pendingChildren == nil {
+		return
+	}
+	// processDelta replaced c.Type with the type c decodes to; the delta
+	// kind survives in diskType.
+	switch c.diskType {
+	case plumbing.OFSDeltaObject:
+		p.pendingChildren[c.OffsetReference]--
+	case plumbing.REFDeltaObject:
+		p.pendingByHash[c.Reference]--
+	}
+	p.releaseIfUnreferenced(c.parent)
 }
 
 // Parse start decoding phase of the packfile.
@@ -326,6 +373,22 @@ func (p *Parser) resolveDeltas(ofsDeltas, refDeltas []*ObjectHeader) error {
 		refChildren[d.Reference] = append(refChildren[d.Reference], d)
 	}
 
+	// Without a storage backend the parent's content cannot be re-inflated by
+	// seeking back into the pack, so it must be kept until every child has
+	// consumed it. Count the children now and release each parent's content
+	// as its last one resolves. With a storage backend, storeOrCache releases
+	// eagerly instead, since a parent can be read back from storage.
+	if p.lowMemoryMode && p.storage == nil {
+		p.pendingChildren = make(map[int64]int, len(ofsChildren))
+		for off, children := range ofsChildren {
+			p.pendingChildren[off] = len(children)
+		}
+		p.pendingByHash = make(map[plumbing.Hash]int, len(refChildren))
+		for h, children := range refChildren {
+			p.pendingByHash[h] = len(children)
+		}
+	}
+
 	var visit func(*ObjectHeader) error
 	visit = func(parent *ObjectHeader) error {
 		for _, c := range refChildren[parent.Hash] {
@@ -339,6 +402,7 @@ func (p *Parser) resolveDeltas(ofsDeltas, refDeltas []*ObjectHeader) error {
 			if err := p.processDelta(c); err != nil {
 				return fmt.Errorf("processing ref-delta at offset %v: %w", c.Offset, err)
 			}
+			p.resolvedChild(c)
 			if err := visit(c); err != nil {
 				return err
 			}
@@ -350,6 +414,7 @@ func (p *Parser) resolveDeltas(ofsDeltas, refDeltas []*ObjectHeader) error {
 			if err := p.processDelta(c); err != nil {
 				return fmt.Errorf("processing ofs-delta at offset %v: %w", c.Offset, err)
 			}
+			p.resolvedChild(c)
 			if err := visit(c); err != nil {
 				return err
 			}
@@ -380,6 +445,7 @@ func (p *Parser) resolveDeltas(ofsDeltas, refDeltas []*ObjectHeader) error {
 		if err := p.processDelta(d); err != nil {
 			return fmt.Errorf("processing ref-delta at offset %v: %w", d.Offset, err)
 		}
+		p.resolvedChild(d)
 		if err := visit(d); err != nil {
 			return err
 		}
@@ -488,7 +554,7 @@ func (p *Parser) parentReader(parent *ObjectHeader) (io.ReaderAt, int64, error) 
 		return contents()
 	}
 
-	// If parent is a Delta object, the inflated object must come
+	// If parent is a delta object, the inflated object must come
 	// from either cache or storage, else we would need to inflate
 	// it to then inflate the current object, which could go on
 	// indefinitely.
