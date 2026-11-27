@@ -93,6 +93,17 @@ func (b *Blob) Reader() (io.ReadCloser, error) {
 	return b.obj.Reader()
 }
 
+// Bytes reads the blob's contents. The returned bytes belong to the caller.
+func (b *Blob) Bytes() (content []byte, err error) {
+	r, err := b.Reader()
+	if err != nil {
+		return nil, err
+	}
+	defer ioutil.CheckClose(r, &err)
+
+	return io.ReadAll(r)
+}
+
 // BlobIter provides an iterator for a set of blobs.
 type BlobIter struct {
 	storer.EncodedObjectIter

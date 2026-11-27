@@ -2,6 +2,7 @@ package object
 
 import (
 	"context"
+	"slices"
 	"sort"
 	"testing"
 
@@ -10,8 +11,8 @@ import (
 
 	"github.com/go-git/go-git/v6/plumbing"
 	"github.com/go-git/go-git/v6/plumbing/cache"
+	"github.com/go-git/go-git/v6/plumbing/diff"
 	"github.com/go-git/go-git/v6/plumbing/filemode"
-	"github.com/go-git/go-git/v6/plumbing/format/diff"
 	"github.com/go-git/go-git/v6/plumbing/storer"
 	"github.com/go-git/go-git/v6/storage/filesystem"
 	"github.com/go-git/go-git/v6/utils/merkletrie"
@@ -86,14 +87,16 @@ func (s *ChangeSuite) TestInsert() {
 	p, err := change.Patch()
 	s.NoError(err)
 	s.Equal(1, len(p.FilePatches()))
-	s.Equal(1, len(p.FilePatches()[0].Chunks()))
-	s.Equal(diff.Add, p.FilePatches()[0].Chunks()[0].Type())
+	edit := s.singleChange(p.FilePatches()[0].Diff())
+	s.Equal(edit.Before.Start, edit.Before.End)
+	s.Greater(edit.After.End, edit.After.Start)
 
 	p, err = change.PatchContext(context.Background())
 	s.NoError(err)
 	s.Equal(1, len(p.FilePatches()))
-	s.Equal(1, len(p.FilePatches()[0].Chunks()))
-	s.Equal(diff.Add, p.FilePatches()[0].Chunks()[0].Type())
+	edit = s.singleChange(p.FilePatches()[0].Diff())
+	s.Equal(edit.Before.Start, edit.Before.End)
+	s.Greater(edit.After.End, edit.After.Start)
 
 	str := change.String()
 	s.Equal("<Action: Insert, Path: examples/clone/main.go>", str)
@@ -144,14 +147,16 @@ func (s *ChangeSuite) TestDelete() {
 	p, err := change.Patch()
 	s.NoError(err)
 	s.Equal(1, len(p.FilePatches()))
-	s.Equal(1, len(p.FilePatches()[0].Chunks()))
-	s.Equal(diff.Delete, p.FilePatches()[0].Chunks()[0].Type())
+	edit := s.singleChange(p.FilePatches()[0].Diff())
+	s.Greater(edit.Before.End, edit.Before.Start)
+	s.Equal(edit.After.Start, edit.After.End)
 
 	p, err = change.PatchContext(context.Background())
 	s.NoError(err)
 	s.Equal(1, len(p.FilePatches()))
-	s.Equal(1, len(p.FilePatches()[0].Chunks()))
-	s.Equal(diff.Delete, p.FilePatches()[0].Chunks()[0].Type())
+	edit = s.singleChange(p.FilePatches()[0].Diff())
+	s.Greater(edit.Before.End, edit.Before.Start)
+	s.Equal(edit.After.Start, edit.After.End)
 
 	str := change.String()
 	s.Equal("<Action: Delete, Path: utils/difftree/difftree.go>", str)
@@ -216,29 +221,43 @@ func (s *ChangeSuite) TestModify() {
 	p, err := change.Patch()
 	s.NoError(err)
 	s.Equal(1, len(p.FilePatches()))
-	s.Equal(7, len(p.FilePatches()[0].Chunks()))
-	s.Equal(diff.Equal, p.FilePatches()[0].Chunks()[0].Type())
-	s.Equal(diff.Delete, p.FilePatches()[0].Chunks()[1].Type())
-	s.Equal(diff.Add, p.FilePatches()[0].Chunks()[2].Type())
-	s.Equal(diff.Equal, p.FilePatches()[0].Chunks()[3].Type())
-	s.Equal(diff.Delete, p.FilePatches()[0].Chunks()[4].Type())
-	s.Equal(diff.Add, p.FilePatches()[0].Chunks()[5].Type())
-	s.Equal(diff.Equal, p.FilePatches()[0].Chunks()[6].Type())
+	s.assertPatchContents(p.FilePatches()[0].Diff(), from, to)
 
 	p, err = change.PatchContext(context.Background())
 	s.NoError(err)
 	s.Equal(1, len(p.FilePatches()))
-	s.Equal(7, len(p.FilePatches()[0].Chunks()))
-	s.Equal(diff.Equal, p.FilePatches()[0].Chunks()[0].Type())
-	s.Equal(diff.Delete, p.FilePatches()[0].Chunks()[1].Type())
-	s.Equal(diff.Add, p.FilePatches()[0].Chunks()[2].Type())
-	s.Equal(diff.Equal, p.FilePatches()[0].Chunks()[3].Type())
-	s.Equal(diff.Delete, p.FilePatches()[0].Chunks()[4].Type())
-	s.Equal(diff.Add, p.FilePatches()[0].Chunks()[5].Type())
-	s.Equal(diff.Equal, p.FilePatches()[0].Chunks()[6].Type())
+	s.assertPatchContents(p.FilePatches()[0].Diff(), from, to)
 
 	str := change.String()
 	s.Equal("<Action: Modify, Path: utils/difftree/difftree.go>", str)
+}
+
+func (s *ChangeSuite) singleChange(result diff.Result) diff.Edit {
+	edits := slices.Collect(result.Edits())
+	s.Require().Len(edits, 1)
+	return edits[0]
+}
+
+func (s *ChangeSuite) assertPatchContents(result diff.Result, from, to *File) {
+	var oldContent, newContent []byte
+	for hunk, err := range result.Hunks(context.Background(), diff.HunkOptions{Context: int(^uint(0) >> 1)}) {
+		s.Require().NoError(err)
+		for _, line := range hunk.Lines {
+			if line.Operation != diff.Insert {
+				oldContent = append(oldContent, line.Content...)
+			}
+			if line.Operation != diff.Delete {
+				newContent = append(newContent, line.Content...)
+			}
+		}
+	}
+	wantOld, err := from.Bytes()
+	s.Require().NoError(err)
+	wantNew, err := to.Bytes()
+	s.Require().NoError(err)
+	s.Equal(wantOld, oldContent)
+	s.Equal(wantNew, newContent)
+	s.NotEmpty(slices.Collect(result.Edits()))
 }
 
 func (s *ChangeSuite) TestEmptyChangeFails() {

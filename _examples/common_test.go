@@ -34,6 +34,7 @@ var args = map[string][]string{
 	"memory":                     {defaultURL},
 	"merge_base":                 {cloneRepository(defaultURL, tempFolder()), "--is-ancestor", "HEAD~3", "HEAD^"},
 	"open":                       {cloneRepository(defaultURL, tempFolder())},
+	"patch":                      {},
 	"perf-clone":                 {cloneRepository(defaultURL, tempFolder())},
 	"progress":                   {defaultURL, tempFolder()},
 	"pull":                       {createRepositoryWithRemote(tempFolder(), defaultURL)},

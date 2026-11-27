@@ -2,13 +2,58 @@ package object
 
 import (
 	"bytes"
+	"errors"
 	"io"
 	"testing"
+	"testing/iotest"
 
+	"github.com/stretchr/testify/require"
 	"github.com/stretchr/testify/suite"
 
 	"github.com/go-git/go-git/v6/plumbing"
 )
+
+func TestBlobBytesErrors(t *testing.T) {
+	t.Parallel()
+	want := errors.New("blob read failed")
+	for _, tc := range []struct {
+		name        string
+		reader      io.Reader
+		open, close error
+	}{
+		{name: "open", open: want},
+		{name: "read", reader: iotest.ErrReader(want)},
+		{name: "close", reader: bytes.NewReader([]byte("content")), close: want},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			reader := &blobTestReader{Reader: tc.reader, err: tc.close}
+			blob := &Blob{obj: blobTestObject{reader: reader, err: tc.open}}
+			_, err := blob.Bytes()
+			require.ErrorIs(t, err, want)
+			require.Equal(t, tc.open == nil, reader.closed)
+		})
+	}
+}
+
+type blobTestObject struct {
+	plumbing.EncodedObject
+	reader io.ReadCloser
+	err    error
+}
+
+func (o blobTestObject) Reader() (io.ReadCloser, error) { return o.reader, o.err }
+
+type blobTestReader struct {
+	io.Reader
+	err    error
+	closed bool
+}
+
+func (r *blobTestReader) Close() error {
+	r.closed = true
+	return r.err
+}
 
 type BlobsSuite struct {
 	suite.Suite

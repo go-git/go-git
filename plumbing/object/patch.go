@@ -9,16 +9,20 @@ import (
 	"strconv"
 	"strings"
 
-	dmp "github.com/sergi/go-diff/diffmatchpatch"
-
 	"github.com/go-git/go-git/v6/plumbing"
+	"github.com/go-git/go-git/v6/plumbing/diff"
 	"github.com/go-git/go-git/v6/plumbing/filemode"
 	fdiff "github.com/go-git/go-git/v6/plumbing/format/diff"
-	"github.com/go-git/go-git/v6/utils/diff"
 )
 
 // ErrCanceled is returned when the operation is canceled.
 var ErrCanceled = errors.New("operation canceled")
+
+// PatchOptions selects the text backend. Nil Differ uses the go-diff backend.
+// The backend must be safe for the caller's use of concurrent operations.
+type PatchOptions struct {
+	Differ diff.Differ
+}
 
 func getPatch(message string, changes ...*Change) (*Patch, error) {
 	ctx := context.Background()
@@ -26,6 +30,17 @@ func getPatch(message string, changes ...*Change) (*Patch, error) {
 }
 
 func getPatchContext(ctx context.Context, message string, changes ...*Change) (*Patch, error) {
+	return getPatchWithOptions(ctx, message, nil, changes...)
+}
+
+func getPatchWithOptions(ctx context.Context, message string, options *PatchOptions, changes ...*Change) (*Patch, error) {
+	if err := ctx.Err(); err != nil {
+		return nil, ErrCanceled
+	}
+	backend := diff.NewDefault()
+	if options != nil && options.Differ != nil {
+		backend = options.Differ
+	}
 	if len(changes) == 0 {
 		return &Patch{message: message}, nil
 	}
@@ -38,7 +53,7 @@ func getPatchContext(ctx context.Context, message string, changes ...*Change) (*
 		default:
 		}
 
-		fp, err := filePatchWithContext(ctx, c)
+		fp, err := filePatchWithDiffer(ctx, c, backend)
 		if err != nil {
 			return nil, err
 		}
@@ -50,57 +65,53 @@ func getPatchContext(ctx context.Context, message string, changes ...*Change) (*
 }
 
 func filePatchWithContext(ctx context.Context, c *Change) (fdiff.FilePatch, error) {
+	return filePatchWithDiffer(ctx, c, diff.NewDefault())
+}
+
+func filePatchWithDiffer(ctx context.Context, c *Change, backend diff.Differ) (fdiff.FilePatch, error) {
+	if err := ctx.Err(); err != nil {
+		return nil, ErrCanceled
+	}
 	// Submodules (gitlinks) are not blob objects, so their contents cannot be
 	// read as files. Git represents them in a diff by a single
 	// "Subproject commit <hash>" line, so build that content synthetically
 	// instead of dropping the change from the patch.
+	var fromContent, toContent []byte
 	if isSubmodule(c.From) || isSubmodule(c.To) {
-		return submoduleFilePatch(ctx, c)
+		fromContent = submoduleContent(c.From)
+		toContent = submoduleContent(c.To)
+	} else {
+		from, to, err := c.Files()
+		if err != nil {
+			return nil, err
+		}
+		var fIsBinary, tIsBinary bool
+		fromContent, fIsBinary, err = fileContent(from)
+		if err != nil {
+			return nil, err
+		}
+		toContent, tIsBinary, err = fileContent(to)
+		if err != nil {
+			return nil, err
+		}
+		if fIsBinary || tIsBinary {
+			return &textFilePatch{from: c.From, to: c.To}, nil
+		}
 	}
 
-	from, to, err := c.Files()
+	result, err := backend.Diff(ctx, fromContent, toContent)
 	if err != nil {
-		return nil, err
-	}
-	fromContent, fIsBinary, err := fileContent(from)
-	if err != nil {
-		return nil, err
-	}
-
-	toContent, tIsBinary, err := fileContent(to)
-	if err != nil {
-		return nil, err
-	}
-
-	if fIsBinary || tIsBinary {
-		return &textFilePatch{from: c.From, to: c.To}, nil
-	}
-
-	diffs := diff.Do(fromContent, toContent)
-
-	chunks := make([]fdiff.Chunk, 0, len(diffs))
-	for _, d := range diffs {
-		select {
-		case <-ctx.Done():
+		if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
 			return nil, ErrCanceled
-		default:
 		}
-
-		var op fdiff.Operation
-		switch d.Type {
-		case dmp.DiffEqual:
-			op = fdiff.Equal
-		case dmp.DiffDelete:
-			op = fdiff.Delete
-		case dmp.DiffInsert:
-			op = fdiff.Add
-		}
-
-		chunks = append(chunks, &textChunk{d.Text, op})
+		return nil, err
+	}
+	if result == nil {
+		return nil, errors.New("diff: backend returned a nil result")
 	}
 
 	return &textFilePatch{
-		chunks: chunks,
+		result: result,
 		from:   c.From,
 		to:     c.To,
 	}, nil
@@ -110,54 +121,15 @@ func isSubmodule(e ChangeEntry) bool {
 	return e != empty && e.TreeEntry.Mode == filemode.Submodule
 }
 
-// submoduleContent returns the textual representation git uses for a submodule
-// (gitlink) in a diff: a single "Subproject commit <hash>" line. It returns an
-// empty string when the entry does not point to a submodule.
-func submoduleContent(e ChangeEntry) string {
+// submoduleContent represents a gitlink as Git's synthetic text line.
+func submoduleContent(e ChangeEntry) []byte {
 	if !isSubmodule(e) {
-		return ""
+		return nil
 	}
-
-	return fmt.Sprintf("Subproject commit %s\n", e.TreeEntry.Hash)
+	return fmt.Appendf(nil, "Subproject commit %s\n", e.TreeEntry.Hash)
 }
 
-// submoduleFilePatch builds a file patch for a change that adds, removes or
-// updates a submodule.
-func submoduleFilePatch(ctx context.Context, c *Change) (fdiff.FilePatch, error) {
-	fromContent := submoduleContent(c.From)
-	toContent := submoduleContent(c.To)
-
-	diffs := diff.Do(fromContent, toContent)
-
-	chunks := make([]fdiff.Chunk, 0, len(diffs))
-	for _, d := range diffs {
-		select {
-		case <-ctx.Done():
-			return nil, ErrCanceled
-		default:
-		}
-
-		var op fdiff.Operation
-		switch d.Type {
-		case dmp.DiffEqual:
-			op = fdiff.Equal
-		case dmp.DiffDelete:
-			op = fdiff.Delete
-		case dmp.DiffInsert:
-			op = fdiff.Add
-		}
-
-		chunks = append(chunks, &textChunk{d.Text, op})
-	}
-
-	return &textFilePatch{
-		chunks: chunks,
-		from:   c.From,
-		to:     c.To,
-	}, nil
-}
-
-func fileContent(f *File) (content string, isBinary bool, err error) {
+func fileContent(f *File) (content []byte, isBinary bool, err error) {
 	if f == nil {
 		return content, isBinary, err
 	}
@@ -167,7 +139,7 @@ func fileContent(f *File) (content string, isBinary bool, err error) {
 		return content, isBinary, err
 	}
 
-	content, err = f.Contents()
+	content, err = f.Bytes()
 
 	return content, isBinary, err
 }
@@ -195,7 +167,7 @@ func (p *Patch) Encode(w io.Writer) error {
 	return ue.Encode(p)
 }
 
-// Stats returns the file stats.
+// Stats returns line counts from raw edits, independent of display filters.
 func (p *Patch) Stats() FileStats {
 	return getFileStatsFromFilePatches(p.FilePatches())
 }
@@ -244,7 +216,7 @@ func (f *changeEntryWrapper) Empty() bool {
 
 // textFilePatch is an implementation of fdiff.FilePatch interface
 type textFilePatch struct {
-	chunks   []fdiff.Chunk
+	result   diff.Result
 	from, to ChangeEntry
 }
 
@@ -264,25 +236,11 @@ func (tf *textFilePatch) Files() (from, to fdiff.File) {
 }
 
 func (tf *textFilePatch) IsBinary() bool {
-	return len(tf.chunks) == 0
+	return tf.result == nil
 }
 
-func (tf *textFilePatch) Chunks() []fdiff.Chunk {
-	return tf.chunks
-}
-
-// textChunk is an implementation of fdiff.Chunk interface
-type textChunk struct {
-	content string
-	op      fdiff.Operation
-}
-
-func (t *textChunk) Content() string {
-	return t.content
-}
-
-func (t *textChunk) Type() fdiff.Operation {
-	return t.op
+func (tf *textFilePatch) Diff() diff.Result {
+	return tf.result
 }
 
 // FileStat stores the status of changes in content of a file.
@@ -359,8 +317,7 @@ func getFileStatsFromFilePatches(filePatches []fdiff.FilePatch) FileStats {
 	fileStats := make(FileStats, 0, len(filePatches))
 
 	for _, fp := range filePatches {
-		// ignore empty patches (binary files, submodule refs updates)
-		if len(fp.Chunks()) == 0 {
+		if fp.IsBinary() {
 			continue
 		}
 
@@ -380,24 +337,9 @@ func getFileStatsFromFilePatches(filePatches []fdiff.FilePatch) FileStats {
 			cs.Name = from.Path()
 		}
 
-		for _, chunk := range fp.Chunks() {
-			s := chunk.Content()
-			if len(s) == 0 {
-				continue
-			}
-
-			switch chunk.Type() {
-			case fdiff.Add:
-				cs.Addition += strings.Count(s, "\n")
-				if s[len(s)-1] != '\n' {
-					cs.Addition++
-				}
-			case fdiff.Delete:
-				cs.Deletion += strings.Count(s, "\n")
-				if s[len(s)-1] != '\n' {
-					cs.Deletion++
-				}
-			}
+		for edit := range fp.Diff().Edits() {
+			cs.Addition += edit.After.End - edit.After.Start
+			cs.Deletion += edit.Before.End - edit.Before.Start
 		}
 
 		fileStats = append(fileStats, cs)
