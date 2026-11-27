@@ -24,6 +24,12 @@ import (
 // aliases this value.
 var ErrNoChange = errors.New("no change")
 
+// ErrShallowNotSupported is returned by FetchV2 when a fetch that deepens, or
+// that comes from a shallow repository, reaches a server that did not
+// advertise the fetch command's shallow feature. transport.ErrShallowNotSupported
+// aliases this value.
+var ErrShallowNotSupported = errors.New("server does not support shallow clients")
+
 // Negotiation pacing, mirroring git's fetch-pack.c (INITIAL_FLUSH, LARGE_FLUSH,
 // MAX_IN_VAIN). v2 is stateless per command, so the stateless schedule applies.
 const (
@@ -147,13 +153,25 @@ type FetchRound func(args *packp.FetchArgs) (out *packp.FetchOutput, packReader 
 // haves and sends "done". The packfile (always sideband-64k muxed in v2) is
 // streamed here, and any shallow-info from the response is applied to st.
 //
-// The caller is responsible for validating optional features against the server
-// advertisement (see FetchSupports) before requesting Filter or Depth.
-func FetchV2(ctx context.Context, st storage.Storer, req *FetchRequest, round FetchRound) error {
+// The caller is responsible for validating a Filter against the server
+// advertisement (see FetchSupports); FetchV2 checks the shallow feature itself.
+func FetchV2(ctx context.Context, st storage.Storer, server capability.List, req *FetchRequest, round FetchRound) error {
 	// Everything wanted is already local and no shallow change was requested:
 	// short-circuit before opening negotiation, matching git's everything_local.
 	if req.Depth == 0 && wantsLocal(req.Wants, req.Haves) {
 		return ErrNoChange
+	}
+
+	// A shallow repository sends its boundary whether or not the fetch
+	// deepens, so that upload-pack grafts it and the boundary's have does not
+	// imply the history behind it. Like git, only a fetch that is not a no-op
+	// needs the server to support it (send_fetch_request in fetch-pack.c).
+	shallows, err := st.Shallow()
+	if err != nil {
+		return err
+	}
+	if (req.Depth > 0 || len(shallows) > 0) && !FetchSupports(server, "shallow") {
+		return ErrShallowNotSupported
 	}
 
 	baseArgs := &packp.FetchArgs{
@@ -161,17 +179,13 @@ func FetchV2(ctx context.Context, st storage.Storer, req *FetchRequest, round Fe
 		OFSDelta:   true,
 		NoProgress: req.Progress == nil,
 		IncludeTag: req.IncludeTags,
+		Shallows:   shallows,
 	}
 	if req.Filter != "" {
 		baseArgs.Filter = req.Filter
 	}
 	if req.Depth > 0 {
 		baseArgs.Deepen = req.Depth
-		shallows, err := st.Shallow()
-		if err != nil {
-			return err
-		}
-		baseArgs.Shallows = shallows
 	}
 
 	// Pop haves from a private copy so the caller's slice is left untouched.

@@ -16,6 +16,7 @@ import (
 	"github.com/go-git/go-git/v6/plumbing"
 	"github.com/go-git/go-git/v6/plumbing/cache"
 	"github.com/go-git/go-git/v6/plumbing/format/pktline"
+	"github.com/go-git/go-git/v6/plumbing/protocol/capability"
 	"github.com/go-git/go-git/v6/plumbing/protocol/packp"
 	"github.com/go-git/go-git/v6/plumbing/protocol/packp/sideband"
 	"github.com/go-git/go-git/v6/storage"
@@ -183,5 +184,5 @@ func fetchV2Response(st storage.Storer, filter packp.Filter, progress io.Writer,
 		Progress: progress,
 		Filter:   filter,
 	}
-	return FetchV2(context.Background(), st, req, round)
+	return FetchV2(context.Background(), st, capability.List{}, req, round)
 }

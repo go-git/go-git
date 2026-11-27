@@ -164,18 +164,26 @@ func NegotiatePack(
 
 	upreq.Wants = req.Wants
 
+	// A shallow repository sends its boundary on every fetch, deepening or
+	// not, so that the server walks the haves no further than the client
+	// has history (fetch-pack.c find_common; upload-pack.c
+	// send_shallow_list registers the shallow lines as grafts). Like git,
+	// check the server can take them before looking for a no-op fetch.
+	upreq.Shallows, err = st.Shallow()
+	if err != nil {
+		return nil, err
+	}
+	if (req.Depth > 0 || len(upreq.Shallows) > 0) && !caps.Supports(capability.Shallow) {
+		return nil, ErrShallowNotSupported
+	}
+	// A fetch whose wants are all local is a no-op, as on git's
+	// everything_local, unless it deepens a shallow repository.
+	deepensShallow := req.Depth > 0 && len(upreq.Shallows) > 0
 	if req.Depth > 0 {
-		if !caps.Supports(capability.Shallow) {
-			return nil, ErrShallowNotSupported
-		}
 		upreq.Depth = packp.DepthRequest{Deepen: req.Depth}
-		upreq.Shallows, err = st.Shallow()
-		if err != nil {
-			return nil, err
-		}
 	}
 
-	if isSubset(req.Wants, req.Haves) && len(upreq.Shallows) == 0 {
+	if isSubset(req.Wants, req.Haves) && !deepensShallow {
 		if err := pktline.WriteFlush(writer); err != nil {
 			return nil, err
 		}
@@ -223,7 +231,7 @@ func NegotiatePack(
 		done = sendDoneAfterReady || len(req.Haves) == 0 || (gotContinue && inVein >= maxInVein)
 		uphav.Done = done
 
-		if isSubset(req.Wants, uphav.Haves) && len(upreq.Shallows) == 0 {
+		if isSubset(req.Wants, uphav.Haves) && !deepensShallow {
 			if err := pktline.WriteFlush(writer); err != nil {
 				return nil, err
 			}

@@ -494,3 +494,78 @@ func TestNegotiatePackReturnsShallowDecodeError(t *testing.T) {
 		t.Fatal("NegotiatePack did not return the shallow-update decode error")
 	}
 }
+
+func TestNegotiatePackAdvertisesShallowWithoutDepth(t *testing.T) {
+	t.Parallel()
+
+	boundary := plumbing.NewHash("6ecf0ef2c2dffb796033e5a02219af86ec6584e5")
+	want := plumbing.NewHash("e8d3ffab552895c19b9fcf7aa264d277cde33881")
+	st := memory.NewStorage()
+	require.NoError(t, st.SetShallow([]plumbing.Hash{boundary}))
+
+	caps := capability.List{}
+	caps.Add(capability.Shallow)
+
+	writer := newMockWriteCloser(nil)
+	_, err := NegotiatePack(
+		context.TODO(),
+		st,
+		caps,
+		false,
+		bytes.NewReader([]byte("0008NAK\n")),
+		writer,
+		&FetchRequest{Wants: []plumbing.Hash{want}, Haves: []plumbing.Hash{boundary}},
+	)
+	require.NoError(t, err)
+
+	// Git sends the boundary as a have as well: upload-pack grafts it, so
+	// the have no longer implies any history behind it.
+	sent := writer.writeBuf.String()
+	assert.Contains(t, sent, "shallow "+boundary.String())
+	assert.Contains(t, sent, "have "+boundary.String())
+	assert.NotContains(t, sent, "deepen")
+}
+
+func TestNegotiatePackShallowNoOpSendsOnlyFlush(t *testing.T) {
+	t.Parallel()
+
+	boundary := plumbing.NewHash("6ecf0ef2c2dffb796033e5a02219af86ec6584e5")
+	st := memory.NewStorage()
+	require.NoError(t, st.SetShallow([]plumbing.Hash{boundary}))
+
+	caps := capability.List{}
+	caps.Add(capability.Shallow)
+
+	writer := newMockWriteCloser(nil)
+	_, err := NegotiatePack(
+		context.TODO(),
+		st,
+		caps,
+		false,
+		bytes.NewReader(nil),
+		writer,
+		&FetchRequest{Wants: []plumbing.Hash{boundary}, Haves: []plumbing.Hash{boundary}},
+	)
+	require.ErrorIs(t, err, ErrNoChange)
+	assert.Equal(t, "0000", writer.writeBuf.String())
+}
+
+func TestNegotiatePackShallowClientNeedsCapability(t *testing.T) {
+	t.Parallel()
+
+	boundary := plumbing.NewHash("6ecf0ef2c2dffb796033e5a02219af86ec6584e5")
+	st := memory.NewStorage()
+	require.NoError(t, st.SetShallow([]plumbing.Hash{boundary}))
+
+	writer := newMockWriteCloser(nil)
+	_, err := NegotiatePack(
+		context.TODO(),
+		st,
+		capability.List{},
+		false,
+		bytes.NewReader(nil),
+		writer,
+		&FetchRequest{Wants: []plumbing.Hash{boundary}, Haves: []plumbing.Hash{boundary}},
+	)
+	require.ErrorIs(t, err, ErrShallowNotSupported)
+}

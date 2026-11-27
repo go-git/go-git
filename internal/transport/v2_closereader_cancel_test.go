@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/go-git/go-git/v6/plumbing"
+	"github.com/go-git/go-git/v6/plumbing/protocol/capability"
 	"github.com/go-git/go-git/v6/plumbing/protocol/packp"
 	"github.com/go-git/go-git/v6/storage/memory"
 )
@@ -69,7 +70,7 @@ func TestFetchV2SkipsCloseReaderOnCancel(t *testing.T) {
 
 	done := make(chan error, 1)
 	go func() {
-		done <- FetchV2(ctx, memory.NewStorage(), req, round)
+		done <- FetchV2(ctx, memory.NewStorage(), capability.List{}, req, round)
 	}()
 
 	// Wait for streamPackfile to actually start blocking on Read before
@@ -117,7 +118,7 @@ func TestFetchV2ClosesReaderOnNonCancelError(t *testing.T) {
 
 	req := &FetchRequest{Wants: []plumbing.Hash{plumbing.NewHash("6ecf0ef2c2dffb796033e5a02219af86ec6584e5")}}
 
-	err := FetchV2(ctx, memory.NewStorage(), req, round)
+	err := FetchV2(ctx, memory.NewStorage(), capability.List{}, req, round)
 	if err == nil {
 		t.Fatal("expected an error from an empty (non-packfile) stream")
 	}

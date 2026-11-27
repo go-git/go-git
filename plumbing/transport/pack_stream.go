@@ -154,9 +154,6 @@ func (s *StreamSession) Fetch(ctx context.Context, st storage.Storer, req *Fetch
 		if req.Filter != "" && !internal.FetchSupports(s.caps, "filter") {
 			return ErrFilterNotSupported
 		}
-		if req.Depth > 0 && !internal.FetchSupports(s.caps, "shallow") {
-			return ErrShallowNotSupported
-		}
 		if err := ReconcileObjectFormatV2(st, s.caps); err != nil {
 			return err
 		}
@@ -169,7 +166,7 @@ func (s *StreamSession) Fetch(ctx context.Context, st storage.Storer, req *Fetch
 			}
 			return out, s.r, nil
 		}
-		if err := internal.FetchV2(ctx, st, req, round); err != nil {
+		if err := internal.FetchV2(ctx, st, s.caps, req, round); err != nil {
 			return s.wrapStderr(ctx, err)
 		}
 		return nil
