@@ -20,6 +20,16 @@ The `filesystem` storer stores the data in the OS filesystem, and can be used as
 
 New implementations can be created by implementing the [storage.Storer interface](storage/storer.go#L16).
 
+### Optional storer interfaces
+
+A storer only has to implement `storage.Storer`. go-git checks for a few optional interfaces in [plumbing/storer](plumbing/storer/object.go) with a type assertion and uses them when present, falling back to the required methods otherwise:
+
+- `storer.RawObjectWriter` streams an object into storage without building a `plumbing.EncodedObject` first. Without it, objects are written through `NewEncodedObject` and `SetEncodedObject`.
+- `storer.PackfileWriter` stores a received packfile as a whole. Without it, the packfile is parsed and each object is stored individually.
+- `storer.EncodedObjectTypeStorer` returns an object's type without reading the object. Without it, the object is read to find its type.
+
+The same package defines others, such as `LooseObjectStorer`, `PackedObjectStorer` and `Transactioner`. A storer that embeds one of the built-in storages gets these methods promoted. A wrapper that overrides `SetEncodedObject` or `EncodedObject` must also override `RawObjectWriter` or `EncodedObjectType`, or calls through them reach the embedded storage and bypass the override.
+
 ## Filesystem
 
 Git repository worktrees are managed using a filesystem abstraction based on [go-billy](https://github.com/go-git/go-billy). The Git operations will take place against the specific filesystem implementation. Initialising a repository in Memory can be done as follows:

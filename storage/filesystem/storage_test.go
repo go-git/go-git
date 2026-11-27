@@ -30,6 +30,7 @@ var (
 
 	// Ensure interfaces are implemented.
 	_ storer.EncodedObjectStorer = sto
+	_ storer.RawObjectWriter     = sto
 	_ storer.IndexStorer         = sto
 	_ storer.ReferenceStorer     = sto
 	_ storer.ShallowStorer       = sto

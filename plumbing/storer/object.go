@@ -12,10 +12,10 @@ import (
 var ErrStop = errors.New("stop iter")
 
 // EncodedObjectStorer generic storage of objects
+//
+// A storer can also implement [RawObjectWriter] to stream objects in without
+// a plumbing.EncodedObject.
 type EncodedObjectStorer interface {
-	// RawObjectWriter returns a io.WriterCloser to write the object without the
-	// need of providing a plumbing.EncodedObject.
-	RawObjectWriter(typ plumbing.ObjectType, sz int64) (w io.WriteCloser, err error)
 	// NewEncodedObject returns a new plumbing.EncodedObject, the real type
 	// of the object can be a custom implementation or the default one,
 	// plumbing.MemoryObject.
@@ -44,6 +44,33 @@ type EncodedObjectStorer interface {
 	// EncodedObjectSize returns the plaintext size of the encoded object.
 	EncodedObjectSize(plumbing.Hash) (int64, error)
 	AddAlternate(remote string) error
+}
+
+// RawObjectWriter is an optional interface for an [EncodedObjectStorer] that
+// can store an object by streaming its content, without the caller building
+// a plumbing.EncodedObject first.
+//
+// Callers that find it missing fall back to NewEncodedObject, writing the
+// content to the object's Writer and calling SetEncodedObject once that
+// writer is closed.
+//
+// A type that embeds a storage implementing it, such as
+// *filesystem.ObjectStorage or *memory.ObjectStorage, gets its
+// RawObjectWriter promoted. A wrapper that overrides SetEncodedObject, to
+// redirect or filter writes, must then override RawObjectWriter as well, or
+// objects streamed through it reach the embedded storage and bypass the
+// override.
+//
+// The caller closes the writer even when an entry fails part way, for example
+// when the copy fails or the content is shorter or longer than sz. There is
+// no way to abort the writer, so an implementation may store a partial
+// object on that Close. An optional interface to abort the write may be
+// added later.
+type RawObjectWriter interface {
+	// RawObjectWriter returns an io.WriteCloser for an object of the given
+	// type and size. The object is stored once the writer is closed, and
+	// Close reports any error storing it.
+	RawObjectWriter(typ plumbing.ObjectType, sz int64) (w io.WriteCloser, err error)
 }
 
 // EncodedObjectTypeStorer is an optional interface for an
