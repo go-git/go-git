@@ -82,7 +82,7 @@ func (t *treeNoder) Children() ([]noder.Noder, error) {
 
 	// the parent of the returned children will be ourself as a tree if
 	// we are a not the root treenoder.  The root is special as it
-	// is is own parent.
+	// is its own parent.
 	parent := t.parent
 	if !t.isRoot() {
 		// Check the name as Tree.FindEntry would before descending, so a
