@@ -3938,6 +3938,36 @@ func (s *WorktreeSuite) TestAddAll() {
 	s.Equal(Untracked, file3.Worktree)
 }
 
+func TestAddAllReplacesTrackedDirectoryWithFile(t *testing.T) {
+	t.Parallel()
+
+	dir := t.TempDir()
+	repo, err := PlainInit(dir, false)
+	require.NoError(t, err)
+	defer func() { _ = repo.Close() }()
+
+	w, err := repo.Worktree()
+	require.NoError(t, err)
+	parent := filepath.Join(dir, "parent")
+	child := filepath.Join(parent, "child")
+	require.NoError(t, os.Mkdir(parent, 0o755))
+	require.NoError(t, os.WriteFile(child, []byte("original"), 0o644))
+	_, err = w.Add("parent/child")
+	require.NoError(t, err)
+	_, err = w.Commit("Track child", defaultTestCommitOptions())
+	require.NoError(t, err)
+
+	require.NoError(t, os.Remove(child))
+	require.NoError(t, os.Remove(parent))
+	require.NoError(t, os.WriteFile(parent, []byte("replacement"), 0o644))
+	require.NoError(t, w.AddWithOptions(&AddOptions{All: true}))
+
+	idx, err := repo.Storer.Index()
+	require.NoError(t, err)
+	require.Len(t, idx.Entries, 1)
+	assert.Equal(t, "parent", idx.Entries[0].Name)
+}
+
 func (s *WorktreeSuite) TestAddGlob() {
 	fs := memfs.New()
 	w := &Worktree{
