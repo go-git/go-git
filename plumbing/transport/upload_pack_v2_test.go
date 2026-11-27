@@ -16,6 +16,7 @@ import (
 	"github.com/go-git/go-git/v6/plumbing/storer"
 	"github.com/go-git/go-git/v6/storage"
 	"github.com/go-git/go-git/v6/storage/filesystem"
+	"github.com/go-git/go-git/v6/storage/memory"
 	"github.com/go-git/go-git/v6/utils/ioutil"
 )
 
@@ -78,7 +79,7 @@ func TestUploadPackV2AdvertisementCapabilities(t *testing.T) {
 	adv := out.String()
 
 	require.Contains(t, adv, "version 2")
-	require.Contains(t, adv, "ls-refs")
+	require.Contains(t, adv, "ls-refs=unborn")
 	require.Contains(t, adv, "fetch=shallow")
 	require.Contains(t, adv, "object-format=")
 
@@ -93,8 +94,45 @@ func TestUploadPackV2AdvertisementCapabilities(t *testing.T) {
 	// otherwise clients request features that are silently dropped or
 	// produce malformed responses.
 	require.NotContains(t, adv, "wait-for-done")
-	require.NotContains(t, adv, "unborn")
 	require.NotContains(t, adv, "server-option")
+}
+
+func TestUploadPackV2LsRefsUnborn(t *testing.T) {
+	t.Parallel()
+	st := memory.NewStorage()
+	require.NoError(t, st.SetReference(plumbing.NewSymbolicReference(plumbing.HEAD, "refs/heads/trunk")))
+
+	out := serveUploadPackV2Test(t, st, v2Request(t, "ls-refs", nil, []string{"unborn", "symrefs"}))
+	require.Contains(t, out, "unborn HEAD symref-target:refs/heads/trunk")
+}
+
+func TestUploadPackV2LsRefsUnbornWithoutSymrefs(t *testing.T) {
+	t.Parallel()
+	st := memory.NewStorage()
+	require.NoError(t, st.SetReference(plumbing.NewSymbolicReference(plumbing.HEAD, "refs/heads/trunk")))
+
+	out := serveUploadPackV2Test(t, st, v2Request(t, "ls-refs", nil, []string{"unborn"}))
+	require.NotContains(t, out, "unborn")
+}
+
+func TestUploadPackV2LsRefsUnbornSymrefLoop(t *testing.T) {
+	t.Parallel()
+	st := memory.NewStorage()
+	require.NoError(t, st.SetReference(plumbing.NewSymbolicReference(plumbing.HEAD, "refs/heads/loop")))
+	require.NoError(t, st.SetReference(plumbing.NewSymbolicReference("refs/heads/loop", plumbing.HEAD)))
+
+	out := serveUploadPackV2Test(t, st, v2Request(t, "ls-refs", nil, []string{"unborn", "symrefs"}))
+	require.NotContains(t, out, "unborn")
+}
+
+func TestUploadPackV2LsRefsUnbornChainedSymref(t *testing.T) {
+	t.Parallel()
+	st := memory.NewStorage()
+	require.NoError(t, st.SetReference(plumbing.NewSymbolicReference(plumbing.HEAD, "refs/heads/a")))
+	require.NoError(t, st.SetReference(plumbing.NewSymbolicReference("refs/heads/a", "refs/heads/b")))
+
+	out := serveUploadPackV2Test(t, st, v2Request(t, "ls-refs", nil, []string{"unborn", "symrefs"}))
+	require.Contains(t, out, "unborn HEAD symref-target:refs/heads/b")
 }
 
 func TestUploadPackV2LsRefsPeeledInline(t *testing.T) {

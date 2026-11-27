@@ -1169,9 +1169,27 @@ func (r *Repository) clone(ctx context.Context, o *CloneOptions) error {
 		Filter:        o.Filter,
 	}, o.ReferenceName)
 
+	if err != nil && !errors.Is(err, transport.ErrEmptyRemoteRepository) {
+		if hr, err1 := r.Storer.Reference(plumbing.HEAD); err1 == nil && hr.Target() == plumbing.Invalid {
+			_ = r.Storer.SetReference(plumbing.NewSymbolicReference(plumbing.HEAD, plumbing.Master))
+		}
+		return err
+	}
+
+	if errors.Is(err, transport.ErrEmptyRemoteRepository) && o.ReferenceName != "" && o.ReferenceName != plumbing.HEAD {
+		return fmt.Errorf("remote branch %s not found", o.ReferenceName.Short())
+	}
+
 	hr, err1 := r.Storer.Reference(plumbing.HEAD)
-	if err1 == nil && hr.Target() == plumbing.Invalid {
-		_ = r.Storer.SetReference(plumbing.NewSymbolicReference(plumbing.HEAD, plumbing.Master))
+	if err1 == nil && (hr.Target() == plumbing.Invalid || errors.Is(err, transport.ErrEmptyRemoteRepository)) {
+		target := plumbing.Master
+		var emptyErr *transport.EmptyRemoteRepositoryError
+		if errors.As(err, &emptyErr) && emptyErr.Unborn.IsBranch() && emptyErr.Unborn.Validate() == nil {
+			target = emptyErr.Unborn
+		}
+		if setErr := r.Storer.SetReference(plumbing.NewSymbolicReference(plumbing.HEAD, target)); setErr != nil {
+			return setErr
+		}
 	}
 
 	if err != nil {

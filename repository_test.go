@@ -36,8 +36,10 @@ import (
 	"github.com/go-git/go-git/v6/internal/test/gitenv"
 	"github.com/go-git/go-git/v6/plumbing"
 	"github.com/go-git/go-git/v6/plumbing/cache"
+	"github.com/go-git/go-git/v6/plumbing/client"
 	formatcfg "github.com/go-git/go-git/v6/plumbing/format/config"
 	"github.com/go-git/go-git/v6/plumbing/object"
+	"github.com/go-git/go-git/v6/plumbing/protocol/capability"
 	"github.com/go-git/go-git/v6/plumbing/protocol/packp"
 	"github.com/go-git/go-git/v6/plumbing/storer"
 	"github.com/go-git/go-git/v6/plumbing/transport"
@@ -746,6 +748,170 @@ func TestPlainCloneContext_EmptyRemoteDoesNotCleanup(t *testing.T) {
 	require.NoError(t, err)
 	require.Len(t, reopenedRemotes, 1)
 	assert.Equal(t, "origin", reopenedRemotes[0].Config().Name)
+}
+
+// TestPlainCloneContext_EmptyRemoteRespectsUnbornHEAD verifies that cloning an
+// empty remote repository over protocol v2 points the local HEAD at the remote's
+// unborn branch (e.g. refs/heads/trunk) rather than falling back to default.
+func TestPlainCloneContext_EmptyRemoteRespectsUnbornHEAD(t *testing.T) {
+	t.Parallel()
+
+	unbornBranch := plumbing.ReferenceName("refs/heads/trunk")
+	remote := filepath.Join(t.TempDir(), "remote.git")
+	remoteRepo, err := PlainInit(remote, true, WithDefaultBranch(unbornBranch))
+	require.NoError(t, err)
+	defer func() { _ = remoteRepo.Close() }()
+
+	dest := filepath.Join(t.TempDir(), "clone")
+	r, err := PlainCloneContext(context.Background(), dest, &CloneOptions{
+		URL:            remote,
+		AllowEmptyRepo: true,
+	})
+	require.NoError(t, err)
+	defer func() { _ = r.Close() }()
+
+	head, err := r.Reference(plumbing.HEAD, false)
+	require.NoError(t, err)
+	assert.Equal(t, plumbing.SymbolicReference, head.Type())
+	assert.Equal(t, unbornBranch, head.Target())
+}
+
+// TestPlainCloneContext_EmptyRemoteRejectsNonBranchUnbornTarget verifies that a
+// remote advertising an unborn target outside refs/heads/ (e.g. refs/tags/x) is rejected
+// and falls back to default branch (master).
+func TestPlainCloneContext_EmptyRemoteRejectsNonBranchUnbornTarget(t *testing.T) {
+	t.Parallel()
+
+	nonBranch := plumbing.ReferenceName("refs/tags/v1.0.0")
+	remote := filepath.Join(t.TempDir(), "remote.git")
+	remoteRepo, err := PlainInit(remote, true, WithDefaultBranch(nonBranch))
+	require.NoError(t, err)
+	defer func() { _ = remoteRepo.Close() }()
+
+	dest := filepath.Join(t.TempDir(), "clone")
+	r, err := PlainCloneContext(context.Background(), dest, &CloneOptions{
+		URL:            remote,
+		AllowEmptyRepo: true,
+	})
+	require.NoError(t, err)
+	defer func() { _ = r.Close() }()
+
+	head, err := r.Reference(plumbing.HEAD, false)
+	require.NoError(t, err)
+	assert.Equal(t, plumbing.SymbolicReference, head.Type())
+	assert.Equal(t, plumbing.Master, head.Target())
+}
+
+type noUnbornTransport struct{}
+
+func (noUnbornTransport) Handshake(_ context.Context, _ *transport.Request) (transport.Session, error) {
+	return &noUnbornSession{}, nil
+}
+
+type noUnbornSession struct{}
+
+func (s *noUnbornSession) Capabilities() *capability.List {
+	return nil
+}
+
+func (s *noUnbornSession) GetRemoteRefs(_ context.Context, _ *transport.GetRemoteRefsOptions) (*transport.RemoteRefs, error) {
+	return nil, transport.ErrEmptyRemoteRepository
+}
+
+func (s *noUnbornSession) Fetch(_ context.Context, _ storage.Storer, _ *transport.FetchRequest) error {
+	return transport.ErrEmptyRemoteRepository
+}
+
+func (s *noUnbornSession) Push(_ context.Context, _ storage.Storer, _ *transport.PushRequest) error {
+	return fmt.Errorf("not implemented")
+}
+
+func (s *noUnbornSession) Close() error { return nil }
+
+// TestPlainCloneContext_EmptyRemoteFallbackWithoutUnborn verifies that an empty
+// remote repository without an unborn advertisement points local HEAD to master.
+func TestPlainCloneContext_EmptyRemoteFallbackWithoutUnborn(t *testing.T) {
+	t.Parallel()
+
+	dest := filepath.Join(t.TempDir(), "clone")
+	r, err := PlainCloneContext(context.Background(), dest, &CloneOptions{
+		URL:            "nounborntest://example.com/repo.git",
+		AllowEmptyRepo: true,
+		ClientOptions:  []client.Option{client.WithTransport("nounborntest", noUnbornTransport{})},
+	})
+	require.NoError(t, err)
+	defer func() { _ = r.Close() }()
+
+	head, err := r.Reference(plumbing.HEAD, false)
+	require.NoError(t, err)
+	assert.Equal(t, plumbing.SymbolicReference, head.Type())
+	assert.Equal(t, plumbing.Master, head.Target())
+}
+
+func TestPlainCloneContext_EmptyRemoteRequestedBranchFails(t *testing.T) {
+	t.Parallel()
+
+	remote := filepath.Join(t.TempDir(), "remote.git")
+	remoteRepo, err := PlainInit(remote, true, WithDefaultBranch("refs/heads/trunk"))
+	require.NoError(t, err)
+	defer func() { _ = remoteRepo.Close() }()
+
+	dest := filepath.Join(t.TempDir(), "clone")
+	_, err = PlainCloneContext(context.Background(), dest, &CloneOptions{
+		URL:            remote,
+		ReferenceName:  plumbing.NewBranchReferenceName("foo"),
+		AllowEmptyRepo: true,
+	})
+	require.Error(t, err)
+	assert.NotErrorIs(t, err, transport.ErrEmptyRemoteRepository)
+}
+
+func TestCloneContext_MemoryEmptyRemoteUnborn(t *testing.T) {
+	t.Parallel()
+
+	remote := filepath.Join(t.TempDir(), "remote.git")
+	remoteRepo, err := PlainInit(remote, true, WithDefaultBranch("refs/heads/trunk"))
+	require.NoError(t, err)
+	defer func() { _ = remoteRepo.Close() }()
+
+	r, err := CloneContext(context.Background(), memory.NewStorage(), nil, &CloneOptions{
+		URL:            remote,
+		AllowEmptyRepo: true,
+	})
+	require.ErrorIs(t, err, transport.ErrEmptyRemoteRepository)
+
+	head, err := r.Reference(plumbing.HEAD, false)
+	require.NoError(t, err)
+	assert.Equal(t, plumbing.SymbolicReference, head.Type())
+	assert.Equal(t, plumbing.ReferenceName("refs/heads/trunk"), head.Target())
+}
+
+func TestCloneContext_NonEmptyKeepsFetchedHEAD(t *testing.T) {
+	t.Parallel()
+
+	src := t.TempDir()
+	srcRepo, err := PlainInit(src, false, WithDefaultBranch("refs/heads/trunk"))
+	require.NoError(t, err)
+	defer func() { _ = srcRepo.Close() }()
+
+	wt, err := srcRepo.Worktree()
+	require.NoError(t, err)
+	require.NoError(t, os.WriteFile(filepath.Join(src, "a.txt"), []byte("hi"), 0o600))
+	_, err = wt.Add("a.txt")
+	require.NoError(t, err)
+	sig := &object.Signature{Name: "t", Email: "t@example.com", When: time.Now()}
+	_, err = wt.Commit("init", &CommitOptions{Author: sig, Committer: sig})
+	require.NoError(t, err)
+
+	r, err := CloneContext(context.Background(), memory.NewStorage(), nil, &CloneOptions{
+		URL: src,
+	})
+	require.NoError(t, err)
+
+	head, err := r.Reference(plumbing.HEAD, false)
+	require.NoError(t, err)
+	assert.Equal(t, plumbing.SymbolicReference, head.Type())
+	assert.Equal(t, plumbing.ReferenceName("refs/heads/trunk"), head.Target())
 }
 
 // A single-branch clone of a missing branch narrows ls-refs to HEAD, which

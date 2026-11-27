@@ -560,7 +560,7 @@ func serveLsRefsV2(_ context.Context, st storage.Storer, w io.Writer, args *pack
 	for _, r := range refs {
 		if r.Name() == plumbing.HEAD {
 			if len(prefixes) == 0 || refMatchesAnyPrefix(r.Name().String(), prefixes) {
-				if err := writeV2Ref(w, st, r, args.Symrefs, args.Peel); err != nil {
+				if err := writeV2Ref(w, st, r, args.Symrefs, args.Peel, args.Unborn); err != nil {
 					return err
 				}
 			}
@@ -575,7 +575,7 @@ func serveLsRefsV2(_ context.Context, st storage.Storer, w io.Writer, args *pack
 		if len(prefixes) > 0 && !refMatchesAnyPrefix(r.Name().String(), prefixes) {
 			continue
 		}
-		if err := writeV2Ref(w, st, r, args.Symrefs, args.Peel); err != nil {
+		if err := writeV2Ref(w, st, r, args.Symrefs, args.Peel, false); err != nil {
 			return err
 		}
 	}
@@ -594,12 +594,27 @@ func refMatchesAnyPrefix(name string, prefixes []string) bool {
 
 // writeV2Ref writes an ls-refs response with the requested reference attributes.
 // See https://github.com/git/git/blob/1630431f326e15fcde608827b5ff38422528eb59/ls-refs.c#L91-L117.
-func writeV2Ref(w io.Writer, st storage.Storer, r *plumbing.Reference, symrefs, peel bool) error {
+func writeV2Ref(w io.Writer, st storage.Storer, r *plumbing.Reference, symrefs, peel, unborn bool) error {
 	var hash plumbing.Hash
 	var target string
 	if r.Type() == plumbing.SymbolicReference {
 		ref, err := storer.ResolveReference(st, r.Target())
 		if reference.IsUnresolvableForAdvertisement(err) {
+			if unborn && symrefs && r.Name() == plumbing.HEAD && errors.Is(err, plumbing.ErrReferenceNotFound) {
+				targetName := r.Target()
+				for range 16 {
+					next, refErr := st.Reference(targetName)
+					if refErr != nil || next.Type() != plumbing.SymbolicReference {
+						break
+					}
+					targetName = next.Target()
+				}
+				if targetName.Validate() == nil {
+					if _, err := pktline.Writef(w, "unborn %s symref-target:%s\n", r.Name(), targetName.String()); err != nil {
+						return err
+					}
+				}
+			}
 			return nil
 		}
 		if err != nil {
