@@ -1579,27 +1579,27 @@ func (r *Remote) buildFetchedTags(refs memory.ReferenceStorage, allTags, force b
 	return updated, forceNeeded, err
 }
 
-// ListContext lists the references on the remote repository.
+// ListContext lists the references on the remote repository, like
+// git ls-remote. A nil o is treated as the zero ListOptions.
+//
 // The provided Context must be non-nil. If the context expires before the
-// operation is complete, an error is returned. The context only affects to the
+// operation is complete, an error is returned. The context only affects the
 // transport operations.
 func (r *Remote) ListContext(ctx context.Context, o *ListOptions) (rfs []*plumbing.Reference, err error) {
+	if o == nil {
+		o = &ListOptions{}
+	}
+
 	return r.list(ctx, o)
 }
 
-// List lists the references on the remote repository.
+// List lists the references on the remote repository, like git ls-remote.
+// A nil o is treated as the zero ListOptions.
+//
+// List has no timeout, as git ls-remote has none. Use ListContext to bound
+// or cancel the operation.
 func (r *Remote) List(o *ListOptions) (rfs []*plumbing.Reference, err error) {
-	timeout := o.Timeout
-	// Default to the old hardcoded 10s value if a timeout is not explicitly set.
-	if timeout == 0 {
-		timeout = 10
-	}
-	if timeout < 0 {
-		return nil, fmt.Errorf("invalid timeout: %d", timeout)
-	}
-	ctx, cancel := context.WithTimeout(context.Background(), time.Duration(timeout)*time.Second)
-	defer cancel()
-	return r.ListContext(ctx, o)
+	return r.ListContext(context.Background(), o)
 }
 
 func (r *Remote) list(ctx context.Context, o *ListOptions) (rfs []*plumbing.Reference, err error) {
