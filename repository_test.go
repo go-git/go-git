@@ -33,11 +33,13 @@ import (
 	"github.com/go-git/go-git/v6/config"
 	archivePkg "github.com/go-git/go-git/v6/internal/archive"
 	"github.com/go-git/go-git/v6/internal/server"
+	testconfig "github.com/go-git/go-git/v6/internal/test/config"
 	"github.com/go-git/go-git/v6/internal/test/gitenv"
 	"github.com/go-git/go-git/v6/plumbing"
 	"github.com/go-git/go-git/v6/plumbing/cache"
 	formatcfg "github.com/go-git/go-git/v6/plumbing/format/config"
 	"github.com/go-git/go-git/v6/plumbing/object"
+	"github.com/go-git/go-git/v6/plumbing/protocol"
 	"github.com/go-git/go-git/v6/plumbing/protocol/packp"
 	"github.com/go-git/go-git/v6/plumbing/storer"
 	"github.com/go-git/go-git/v6/plumbing/transport"
@@ -238,6 +240,412 @@ func TestPlainOpenRelativeWorktree(t *testing.T) {
 	worktree, err := linkedRepo.Worktree()
 	require.NoError(t, err)
 	assert.Equal(t, filepath.Clean(linkedDir), filepath.Clean(worktree.Filesystem().Root()))
+}
+
+func TestPlainInitSkipsNilOptions(t *testing.T) {
+	t.Parallel()
+
+	r, err := PlainInit(t.TempDir(), false, nil)
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = r.Close() })
+
+	head, err := r.Reference(plumbing.HEAD, false)
+	require.NoError(t, err)
+	assert.Equal(t, plumbing.Master, head.Target())
+}
+
+type storerWithoutObjectFormatSetter struct {
+	storage.Storer
+}
+
+func TestInitWithObjectFormat(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name  string
+		store func(t *testing.T) storage.Storer
+	}{
+		{
+			name:  "memory",
+			store: func(_ *testing.T) storage.Storer { return memory.NewStorage() },
+		},
+		{
+			name: "filesystem",
+			store: func(t *testing.T) storage.Storer {
+				return filesystem.NewStorage(osfs.New(t.TempDir()), cache.NewObjectLRUDefault())
+			},
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+
+			r, err := Init(tc.store(t), WithWorkTree(memfs.New()), WithObjectFormat(formatcfg.SHA256))
+			require.NoError(t, err)
+			t.Cleanup(func() { _ = r.Close() })
+
+			cfg, err := r.Config()
+			require.NoError(t, err)
+			assert.Equal(t, formatcfg.SHA256, cfg.Extensions.ObjectFormat)
+			assert.Equal(t, formatcfg.RepositoryFormatVersion(formatcfg.Version1), cfg.Core.RepositoryFormatVersion)
+
+			blob := r.Storer.NewEncodedObject()
+			blob.SetType(plumbing.BlobObject)
+			h, err := r.Storer.SetEncodedObject(blob)
+			require.NoError(t, err)
+			assert.Len(t, h.String(), formatcfg.SHA256.HexSize())
+
+			assert.Len(t, createCommit(t, r).String(), formatcfg.SHA256.HexSize())
+		})
+	}
+}
+
+func TestInitWithSHA1ObjectFormatLeavesConfigUntouched(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name string
+		init func(t *testing.T) (*Repository, error)
+	}{
+		{
+			name: "Init memory",
+			init: func(*testing.T) (*Repository, error) {
+				return Init(memory.NewStorage(), WithObjectFormat(formatcfg.SHA1))
+			},
+		},
+		{
+			name: "Init filesystem",
+			init: func(t *testing.T) (*Repository, error) {
+				st := filesystem.NewStorage(osfs.New(t.TempDir()), cache.NewObjectLRUDefault())
+				return Init(st, WithObjectFormat(formatcfg.SHA1))
+			},
+		},
+		{
+			name: "PlainInit",
+			init: func(t *testing.T) (*Repository, error) {
+				return PlainInit(t.TempDir(), false, WithObjectFormat(formatcfg.SHA1))
+			},
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+
+			r, err := tc.init(t)
+			require.NoError(t, err)
+			t.Cleanup(func() { _ = r.Close() })
+
+			cfg, err := r.Config()
+			require.NoError(t, err)
+			assert.Equal(t, formatcfg.UnsetObjectFormat, cfg.Extensions.ObjectFormat)
+			assert.NotEqual(t, formatcfg.RepositoryFormatVersion(formatcfg.Version1), cfg.Core.RepositoryFormatVersion)
+			assert.False(t, cfg.Raw.Section("extensions").Options.Has("objectformat"))
+		})
+	}
+}
+
+func TestInitWithEmptyDefaultBranch(t *testing.T) {
+	t.Parallel()
+
+	r, err := Init(memory.NewStorage(), WithDefaultBranch(""))
+	require.Error(t, err)
+	assert.Nil(t, r)
+}
+
+func TestInitWithObjectFormatUnsupportedStorer(t *testing.T) {
+	t.Parallel()
+
+	st := storerWithoutObjectFormatSetter{memory.NewStorage()}
+	_, err := Init(st, WithObjectFormat(formatcfg.SHA256))
+	require.Error(t, err)
+
+	r, err := Init(storerWithoutObjectFormatSetter{memory.NewStorage()}, WithObjectFormat(formatcfg.SHA1))
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = r.Close() })
+}
+
+type closeTrackingStorer struct {
+	*memory.Storage
+	closed bool
+}
+
+func (s *closeTrackingStorer) Close() error {
+	s.closed = true
+	return nil
+}
+
+func TestInitDoesNotCloseCallerStorer(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name    string
+		prepare func(t *testing.T, st storage.Storer)
+		opts    []InitOption
+		wantErr error
+	}{
+		{
+			name: "target not empty",
+			prepare: func(t *testing.T, st storage.Storer) {
+				_, err := Init(st)
+				require.NoError(t, err)
+			},
+			wantErr: ErrTargetDirNotEmpty,
+		},
+		{
+			name:    "invalid default branch",
+			prepare: func(*testing.T, storage.Storer) {},
+			opts:    []InitOption{WithDefaultBranch("foo")},
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+
+			st := &closeTrackingStorer{Storage: memory.NewStorage()}
+			tc.prepare(t, st)
+
+			r, err := Init(st, tc.opts...)
+			require.Error(t, err)
+			if tc.wantErr != nil {
+				require.ErrorIs(t, err, tc.wantErr)
+			}
+			assert.Nil(t, r)
+			assert.False(t, st.closed, "Init must not close a storer it does not own")
+		})
+	}
+}
+
+func TestInitDefaultBranchFromConfig(t *testing.T) { //nolint:paralleltest // modifies global plugin state
+	global := config.NewConfig()
+	global.Init.DefaultBranch = "trunk"
+	testconfig.Register(*global, *config.NewConfig())
+	t.Cleanup(registerTestConfigLoader)
+
+	emptyRemote := filepath.Join(t.TempDir(), "remote.git")
+	remoteRepo, err := PlainInit(emptyRemote, true)
+	require.NoError(t, err)
+	require.NoError(t, remoteRepo.Close())
+
+	tests := []struct {
+		name       string
+		repo       func(t *testing.T) (*Repository, error)
+		wantBranch plumbing.ReferenceName
+	}{
+		{
+			name: "Init",
+			repo: func(*testing.T) (*Repository, error) {
+				return Init(memory.NewStorage(), WithWorkTree(memfs.New()))
+			},
+			wantBranch: "refs/heads/trunk",
+		},
+		{
+			name: "Init with explicit default branch",
+			repo: func(*testing.T) (*Repository, error) {
+				return Init(memory.NewStorage(), WithDefaultBranch("refs/heads/explicit"))
+			},
+			wantBranch: "refs/heads/explicit",
+		},
+		{
+			name: "PlainInit",
+			repo: func(t *testing.T) (*Repository, error) {
+				return PlainInit(t.TempDir(), false)
+			},
+			wantBranch: "refs/heads/trunk",
+		},
+		{
+			name: "Clone of empty remote",
+			repo: func(*testing.T) (*Repository, error) {
+				return Clone(memory.NewStorage(), memfs.New(), &CloneOptions{
+					URL:            emptyRemote,
+					AllowEmptyRepo: true,
+				})
+			},
+			wantBranch: "refs/heads/trunk",
+		},
+		{
+			name: "PlainClone of empty remote",
+			repo: func(t *testing.T) (*Repository, error) {
+				return PlainClone(t.TempDir(), &CloneOptions{
+					URL:            emptyRemote,
+					AllowEmptyRepo: true,
+				})
+			},
+			wantBranch: "refs/heads/trunk",
+		},
+	}
+
+	for _, tc := range tests { //nolint:paralleltest // modifies global plugin state
+		t.Run(tc.name, func(t *testing.T) {
+			r, err := tc.repo(t)
+			require.NoError(t, err)
+			t.Cleanup(func() { _ = r.Close() })
+
+			head, err := r.Reference(plumbing.HEAD, false)
+			require.NoError(t, err)
+			assert.Equal(t, tc.wantBranch, head.Target())
+		})
+	}
+}
+
+func TestInitInvalidDefaultBranchFromConfig(t *testing.T) { //nolint:paralleltest // modifies global plugin state
+	tests := []struct {
+		name  string
+		value string
+	}{
+		{name: "empty", value: ""},
+		{name: "invalid", value: "foo..bar"},
+	}
+
+	for _, tc := range tests { //nolint:paralleltest // modifies global plugin state
+		t.Run(tc.name, func(t *testing.T) {
+			global := config.NewConfig()
+			raw := fmt.Sprintf("[init]\n\tdefaultBranch = %s\n", tc.value)
+			require.NoError(t, global.Unmarshal([]byte(raw)))
+			testconfig.Register(*global, *config.NewConfig())
+			t.Cleanup(registerTestConfigLoader)
+
+			r, err := Init(memory.NewStorage())
+			require.ErrorContains(t, err, "invalid branch name: init.defaultBranch")
+			assert.Nil(t, r)
+
+			st := memory.NewStorage()
+			require.NoError(t, st.SetReference(plumbing.NewSymbolicReference(plumbing.HEAD, plumbing.Master)))
+			r, err = Init(st)
+			require.ErrorIs(t, err, ErrTargetDirNotEmpty)
+			assert.Nil(t, r)
+		})
+	}
+}
+
+func TestInitDefaultBranchPrecedence(t *testing.T) { //nolint:paralleltest // modifies global plugin state
+	withBranch := func(name string) config.Config {
+		cfg := config.NewConfig()
+		cfg.Init.DefaultBranch = name
+		return *cfg
+	}
+
+	tests := []struct {
+		name   string
+		system config.Config
+		global config.Config
+		want   plumbing.ReferenceName
+	}{
+		{name: "global over system", system: withBranch("system"), global: withBranch("global"), want: "refs/heads/global"},
+		{name: "system only", system: withBranch("system"), global: *config.NewConfig(), want: "refs/heads/system"},
+		{name: "global only", system: *config.NewConfig(), global: withBranch("global"), want: "refs/heads/global"},
+		{name: "neither", system: *config.NewConfig(), global: *config.NewConfig(), want: plumbing.Master},
+	}
+
+	for _, tc := range tests { //nolint:paralleltest // modifies global plugin state
+		t.Run(tc.name, func(t *testing.T) {
+			testconfig.Register(tc.global, tc.system)
+			t.Cleanup(registerTestConfigLoader)
+
+			r, err := Init(memory.NewStorage())
+			require.NoError(t, err)
+
+			head, err := r.Reference(plumbing.HEAD, false)
+			require.NoError(t, err)
+			assert.Equal(t, tc.want, head.Target())
+		})
+	}
+}
+
+func TestInitDefaultBranchMatchesGit(t *testing.T) { //nolint:paralleltest // modifies global plugin state
+	requireGitBinary(t)
+
+	remote := filepath.Join(t.TempDir(), "remote.git")
+	git(t, filepath.Dir(remote), "init", "--bare", remote)
+
+	branch := func(name string) string {
+		return "[init]\n\tdefaultBranch = " + name + "\n"
+	}
+
+	tests := []struct {
+		name   string
+		system string
+		global string
+	}{
+		{name: "unset"},
+		{name: "global", global: branch("trunk")},
+		{name: "system", system: branch("sysbranch")},
+		{name: "global over system", system: branch("sysbranch"), global: branch("trunk")},
+		{name: "invalid system under valid global", system: branch("foo..bar"), global: branch("trunk")},
+		{name: "invalid", global: branch("foo..bar")},
+		{name: "empty", global: branch("")},
+	}
+
+	for _, tc := range tests { //nolint:paralleltest // modifies global plugin state
+		t.Run(tc.name, func(t *testing.T) {
+			dir := t.TempDir()
+			systemPath := filepath.Join(dir, "system")
+			globalPath := filepath.Join(dir, "global")
+			require.NoError(t, os.WriteFile(systemPath, []byte(tc.system), 0o600))
+			require.NoError(t, os.WriteFile(globalPath, []byte(tc.global), 0o600))
+
+			system := config.NewConfig()
+			require.NoError(t, system.Unmarshal([]byte(tc.system)))
+			global := config.NewConfig()
+			require.NoError(t, global.Unmarshal([]byte(tc.global)))
+			testconfig.Register(*global, *system)
+			t.Cleanup(registerTestConfigLoader)
+
+			// protocol.version=0 keeps git from taking the unborn HEAD of the
+			// remote, which go-git does not read yet, so that git's clone falls
+			// back to init.defaultBranch.
+			for _, op := range []struct {
+				name   string
+				git    []string
+				goGit  func(path string) (*Repository, error)
+				goPath string
+			}{
+				{
+					name: "init",
+					git:  []string{"init", filepath.Join(dir, "git-init")},
+					goGit: func(path string) (*Repository, error) {
+						return PlainInit(path, false)
+					},
+					goPath: filepath.Join(dir, "go-git-init"),
+				},
+				{
+					name: "clone of empty remote",
+					git:  []string{"-c", "protocol.version=0", "clone", remote, filepath.Join(dir, "git-clone")},
+					goGit: func(path string) (*Repository, error) {
+						return PlainClone(path, &CloneOptions{URL: remote, AllowEmptyRepo: true})
+					},
+					goPath: filepath.Join(dir, "go-git-clone"),
+				},
+			} {
+				t.Run(op.name, func(t *testing.T) {
+					cmd := gitenv.Command("git", op.git...)
+					cmd.Env = append(cmd.Env,
+						"GIT_CONFIG_NOSYSTEM=0",
+						"GIT_CONFIG_SYSTEM="+systemPath,
+						"GIT_CONFIG_GLOBAL="+globalPath,
+						"GIT_CONFIG_COUNT=0",
+						"GIT_TEST_DEFAULT_INITIAL_BRANCH_NAME=",
+					)
+					out, gitErr := cmd.CombinedOutput()
+
+					r, err := op.goGit(op.goPath)
+					if gitErr != nil {
+						require.Error(t, err, "git failed: %s", out)
+						return
+					}
+					require.NoError(t, err)
+					t.Cleanup(func() { _ = r.Close() })
+
+					gitHead := git(t, op.git[len(op.git)-1], "symbolic-ref", "HEAD")
+					head, err := r.Reference(plumbing.HEAD, false)
+					require.NoError(t, err)
+					assert.Equal(t, strings.TrimSpace(gitHead), head.Target().String())
+				})
+			}
+		})
+	}
 }
 
 type RepositorySuite struct {
@@ -663,22 +1071,36 @@ func TestPlainCloneContext_FailedCloneRemovesCreatedDirectory(t *testing.T) {
 func TestPlainCloneContext_FailedClonePreservesPreexistingEmptyDirectory(t *testing.T) {
 	t.Parallel()
 
-	// dest exists and is empty before the clone attempt.
-	dest := t.TempDir()
+	tests := []struct {
+		name string
+		opts CloneOptions
+	}{
+		{name: "non-bare", opts: CloneOptions{URL: "incorrectOnPurpose"}},
+		{name: "bare", opts: CloneOptions{URL: "incorrectOnPurpose", Bare: true}},
+		{name: "mirror", opts: CloneOptions{URL: "incorrectOnPurpose", Mirror: true}},
+	}
 
-	_, err := PlainCloneContext(context.Background(), dest, &CloneOptions{
-		URL: "incorrectOnPurpose",
-	})
-	require.Error(t, err)
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
 
-	// The directory itself must still be there …
-	_, statErr := os.Stat(dest)
-	assert.NoError(t, statErr, "PlainCloneContext must not remove a pre-existing directory")
+			// dest exists and is empty before the clone attempt.
+			dest := t.TempDir()
 
-	// … and must be empty (any .git content added by PlainInit must be removed).
-	entries, _ := os.ReadDir(dest)
-	assert.Empty(t, entries,
-		"PlainCloneContext must remove any content it added to a pre-existing empty directory")
+			_, err := PlainCloneContext(context.Background(), dest, &tc.opts)
+			require.Error(t, err)
+
+			// The directory itself must still be there …
+			_, statErr := os.Stat(dest)
+			assert.NoError(t, statErr, "PlainCloneContext must not remove a pre-existing directory")
+
+			// … and must be empty (any content added by PlainInit must be removed).
+			entries, err := os.ReadDir(dest)
+			require.NoError(t, err)
+			assert.Empty(t, entries,
+				"PlainCloneContext must remove any content it added to a pre-existing empty directory")
+		})
+	}
 }
 
 // TestPlainCloneContext_EmptyRemoteReturnsError verifies that cloning an
@@ -729,16 +1151,14 @@ func TestPlainCloneContext_EmptyRemoteDoesNotCleanup(t *testing.T) {
 	assert.NoError(t, statErr,
 		"PlainCloneContext must not remove .git when cloning an empty remote")
 
-	// HEAD must be a valid symbolic reference (not .invalid), because
-	// AllowEmptyRepo skips withPartialInit and fully initialises the repo.
+	// HEAD must be moved off the clone placeholder to the default branch.
 	head, err := r.Reference(plumbing.HEAD, false)
 	require.NoError(t, err)
 	assert.Equal(t, plumbing.SymbolicReference, head.Type())
 	assert.NotEqual(t, plumbing.Invalid, head.Target(),
 		"HEAD must not point to .invalid when AllowEmptyRepo is set")
 
-	// The repository should be re-openable — a fully initialised repo has
-	// its config persisted (unlike a partialInit repo).
+	// The repository should be re-openable, with its config persisted.
 	reopened, err := PlainOpen(dest)
 	require.NoError(t, err)
 	defer func() { _ = reopened.Close() }()
@@ -746,6 +1166,215 @@ func TestPlainCloneContext_EmptyRemoteDoesNotCleanup(t *testing.T) {
 	require.NoError(t, err)
 	require.Len(t, reopenedRemotes, 1)
 	assert.Equal(t, "origin", reopenedRemotes[0].Config().Name)
+}
+
+func TestCloneRejectsBareWithWorktree(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name string
+		opts CloneOptions
+	}{
+		{name: "bare", opts: CloneOptions{URL: "file:///does/not/matter", Bare: true}},
+		{name: "mirror", opts: CloneOptions{URL: "file:///does/not/matter", Mirror: true}},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+
+			st := &closeTrackingStorer{Storage: memory.NewStorage()}
+			r, err := Clone(st, memfs.New(), &tc.opts)
+			require.ErrorIs(t, err, ErrBareCloneWithWorktree)
+			assert.Nil(t, r)
+
+			_, err = st.Reference(plumbing.HEAD)
+			assert.ErrorIs(t, err, plumbing.ErrReferenceNotFound, "storer must be left untouched")
+		})
+	}
+}
+
+func TestCloneEmptyRemote(t *testing.T) {
+	t.Parallel()
+
+	remote := filepath.Join(t.TempDir(), "remote.git")
+	remoteRepo, err := PlainInit(remote, true)
+	require.NoError(t, err)
+	require.NoError(t, remoteRepo.Close())
+
+	_, err = Clone(memory.NewStorage(), memfs.New(), &CloneOptions{URL: remote})
+	require.ErrorIs(t, err, transport.ErrEmptyRemoteRepository)
+
+	tests := []struct {
+		name string
+		wt   billy.Filesystem
+	}{
+		{name: "bare", wt: nil},
+		{name: "non-bare", wt: memfs.New()},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+
+			r, err := Clone(memory.NewStorage(), tc.wt, &CloneOptions{
+				URL:            remote,
+				AllowEmptyRepo: true,
+			})
+			require.NoError(t, err)
+			t.Cleanup(func() { _ = r.Close() })
+
+			head, err := r.Reference(plumbing.HEAD, false)
+			require.NoError(t, err)
+			assert.Equal(t, plumbing.Master, head.Target())
+
+			cfg, err := r.Config()
+			require.NoError(t, err)
+			assert.Equal(t, tc.wt == nil, cfg.Core.IsBare)
+			assert.Contains(t, cfg.Remotes, DefaultRemoteName)
+
+			if tc.wt == nil {
+				assert.Empty(t, cfg.Branches)
+				return
+			}
+			require.Contains(t, cfg.Branches, "master")
+			assert.Equal(t, DefaultRemoteName, cfg.Branches["master"].Remote)
+			assert.Equal(t, plumbing.Master, cfg.Branches["master"].Merge)
+		})
+	}
+}
+
+func TestCloneEmptyRemoteWithReferenceName(t *testing.T) {
+	t.Parallel()
+
+	remote := filepath.Join(t.TempDir(), "remote.git")
+	remoteRepo, err := PlainInit(remote, true)
+	require.NoError(t, err)
+	require.NoError(t, remoteRepo.Close())
+
+	for _, ref := range []plumbing.ReferenceName{"refs/heads/x", "refs/tags/v1"} {
+		t.Run(ref.String(), func(t *testing.T) {
+			t.Parallel()
+
+			o := func() *CloneOptions {
+				return &CloneOptions{URL: remote, AllowEmptyRepo: true, ReferenceName: ref}
+			}
+
+			_, err := Clone(memory.NewStorage(), memfs.New(), o())
+			require.ErrorIs(t, err, plumbing.ErrReferenceNotFound)
+			require.ErrorContains(t, err, "remote branch "+ref.Short()+" not found in upstream origin")
+
+			dest := filepath.Join(t.TempDir(), "clone")
+			r, err := PlainClone(dest, o())
+			require.ErrorIs(t, err, plumbing.ErrReferenceNotFound)
+			assert.Nil(t, r)
+			assert.NoDirExists(t, dest)
+		})
+	}
+
+	r, err := Clone(memory.NewStorage(), memfs.New(), &CloneOptions{
+		URL:            remote,
+		AllowEmptyRepo: true,
+		ReferenceName:  plumbing.HEAD,
+	})
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = r.Close() })
+}
+
+func TestCloneEmptySHA256Remote(t *testing.T) {
+	t.Parallel()
+
+	remote := filepath.Join(t.TempDir(), "remote.git")
+	remoteRepo, err := PlainInit(remote, true, WithObjectFormat(formatcfg.SHA256))
+	require.NoError(t, err)
+	require.NoError(t, remoteRepo.Close())
+	url := "file://" + filepath.ToSlash(remote)
+
+	memoryClone := func(version protocol.Version) func(*testing.T) (*Repository, error) {
+		return func(t *testing.T) (*Repository, error) {
+			st := memory.NewStorage()
+			cfg, err := st.Config()
+			require.NoError(t, err)
+			cfg.Protocol.Version = version
+			require.NoError(t, st.SetConfig(cfg))
+
+			return Clone(st, memfs.New(), &CloneOptions{URL: url, AllowEmptyRepo: true})
+		}
+	}
+
+	tests := []struct {
+		name  string
+		clone func(t *testing.T) (*Repository, error)
+	}{
+		{name: "Clone v0", clone: memoryClone(protocol.V0)},
+		{name: "Clone v1", clone: memoryClone(protocol.V1)},
+		{name: "Clone v2", clone: memoryClone(protocol.V2)},
+		{
+			name: "PlainClone",
+			clone: func(t *testing.T) (*Repository, error) {
+				return PlainClone(t.TempDir(), &CloneOptions{URL: url, AllowEmptyRepo: true})
+			},
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+
+			r, err := tc.clone(t)
+			require.NoError(t, err)
+			t.Cleanup(func() { _ = r.Close() })
+
+			cfg, err := r.Config()
+			require.NoError(t, err)
+			assert.Equal(t, formatcfg.SHA256, cfg.Extensions.ObjectFormat)
+			assert.Equal(t, formatcfg.RepositoryFormatVersion(formatcfg.Version1), cfg.Core.RepositoryFormatVersion)
+
+			blob := r.Storer.NewEncodedObject()
+			blob.SetType(plumbing.BlobObject)
+			h, err := r.Storer.SetEncodedObject(blob)
+			require.NoError(t, err)
+			assert.Len(t, h.String(), formatcfg.SHA256.HexSize())
+		})
+	}
+}
+
+func TestCloneEmptySHA256RemoteMatchesGit(t *testing.T) {
+	t.Parallel()
+	requireGitBinary(t)
+
+	dir := t.TempDir()
+	remote := filepath.Join(dir, "remote.git")
+	git(t, dir, "init", "--bare", "--object-format=sha256", remote)
+
+	gitClone := filepath.Join(dir, "git-clone")
+	git(t, dir, "clone", remote, gitClone)
+
+	goClone := filepath.Join(dir, "go-git-clone")
+	r, err := PlainClone(goClone, &CloneOptions{URL: remote, AllowEmptyRepo: true})
+	require.NoError(t, err)
+	require.NoError(t, r.Close())
+
+	for _, args := range [][]string{
+		{"rev-parse", "--show-object-format"},
+		{"config", "core.repositoryformatversion"},
+		{"config", "extensions.objectformat"},
+	} {
+		t.Run(strings.Join(args, " "), func(t *testing.T) {
+			t.Parallel()
+
+			assert.Equal(t, git(t, gitClone, args...), git(t, goClone, args...))
+		})
+	}
+}
+
+func TestPlainCloneContextNilOptions(t *testing.T) {
+	t.Parallel()
+
+	dest := filepath.Join(t.TempDir(), "clone")
+	r, err := PlainCloneContext(context.Background(), dest, nil)
+	require.ErrorIs(t, err, ErrMissingURL)
+	assert.Nil(t, r)
 }
 
 // A single-branch clone of a missing branch narrows ls-refs to HEAD, which
@@ -1757,7 +2386,7 @@ func (s *RepositorySuite) TestPlainCloneContextCancel() {
 		URL: s.GetBasicLocalRepositoryURL(),
 	})
 
-	s.NotNil(r)
+	s.Nil(r)
 	s.ErrorIs(err, context.Canceled)
 }
 
@@ -1773,7 +2402,7 @@ func (s *RepositorySuite) TestPlainCloneContextNonExistentWithExistentDir() {
 	r, err := PlainCloneContext(ctx, dir, &CloneOptions{
 		URL: "incorrectOnPurpose",
 	})
-	s.NotNil(r)
+	s.Nil(r)
 	s.ErrorIs(err, transport.ErrRepositoryNotFound)
 
 	_, err = fs.Stat(dir)
@@ -1798,7 +2427,7 @@ func (s *RepositorySuite) TestPlainCloneContextNonExistentWithNonExistentDir() {
 	r, err := PlainCloneContext(ctx, repoDir, &CloneOptions{
 		URL: "incorrectOnPurpose",
 	})
-	s.NotNil(r)
+	s.Nil(r)
 	s.ErrorIs(err, transport.ErrRepositoryNotFound)
 
 	_, err = fs.Stat(repoDir)

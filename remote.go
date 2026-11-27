@@ -515,6 +515,13 @@ func (r *Remote) fetch(ctx context.Context, o *FetchOptions) (sto storer.Referen
 	rRefs, err := sess.GetRemoteRefs(ctx, &transport.GetRemoteRefsOptions{
 		RefPrefixes: fetchRefPrefixes(o.RefSpecs, o.Tags),
 	})
+	if errors.Is(err, transport.ErrEmptyRemoteRepository) {
+		if head, herr := r.s.Reference(plumbing.HEAD); herr == nil && head.Target() == plumbing.Invalid {
+			if ferr := transport.ReconcileObjectFormatV2(r.s, *sess.Capabilities()); ferr != nil {
+				return nil, ferr
+			}
+		}
+	}
 	if err != nil {
 		return nil, err
 	}

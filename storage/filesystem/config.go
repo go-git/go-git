@@ -32,7 +32,8 @@ func (c *ConfigStorage) Config() (conf *config.Config, err error) {
 		if errors.Is(err, os.ErrNotExist) {
 			cfg := config.NewConfig()
 
-			if c.objectFormat != formatcfg.SHA1 {
+			// SHA-1 is the default format and needs no extension.
+			if c.objectFormat != formatcfg.SHA1 && c.objectFormat != formatcfg.UnsetObjectFormat {
 				cfg.Core.RepositoryFormatVersion = formatcfg.Version1
 				cfg.Extensions.ObjectFormat = c.objectFormat
 			}

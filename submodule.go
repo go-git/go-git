@@ -5,6 +5,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io"
 	"path"
 	"path/filepath"
 
@@ -145,6 +146,9 @@ func (s *Submodule) Repository() (*Repository, error) {
 
 	r, err := Init(storer, WithWorkTree(worktree))
 	if err != nil {
+		if closer, ok := storer.(io.Closer); ok {
+			_ = closer.Close()
+		}
 		return nil, err
 	}
 
