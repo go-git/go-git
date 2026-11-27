@@ -3,6 +3,7 @@
 package mmap
 
 import (
+	"bytes"
 	"encoding/binary"
 	"fmt"
 
@@ -11,7 +12,6 @@ import (
 
 var (
 	idxSignature = []byte{255, 't', 'O', 'c'}
-	idxMinLen    = idxHeaderSize + idxFanoutSize + idxCrcSize + len(idxSignature) + 40 // idx and pack hashes
 	idxSupported = uint32(2)
 )
 
@@ -51,35 +51,45 @@ func (s *PackScanner) loadIdxFile(idx billy.File) error {
 	return nil
 }
 
-// validateIdx returns the object count of idx, rejecting it if its fanout
-// is out of order or its size cannot hold the per-object tables the fanout
-// declares, as Git's [load_idx] does. Lookups use the fanout as binary
-// search bounds and derive every table offset from the object count.
+// validateIdx returns the object count of idx, a version 2 pack index,
+// rejecting it with ErrCorruptedIdx when its fanout or its size cannot be
+// what the header claims. hashSize is the object id size in bytes.
 //
-// [load_idx]: https://github.com/git/git/blob/v2.55.0/packfile.c#L211-L251
+// The last fanout entry is the object count, and the count fixes the size
+// of every table but the 64-bit offsets. That table has an entry only for
+// an object at or past 2 GiB in the pack, which the first object never is,
+// so it holds at most count-1 entries.
 func validateIdx(idx []byte, hashSize int) (int, error) {
-	if err := validateFile(idx, idxSupported, idxSignature, idxMinLen); err != nil {
-		return 0, err
+	if len(idx) < idxHeaderSize+idxFanoutSize {
+		return 0, fmt.Errorf("%w: %d bytes is too short for the header and fanout table", ErrCorruptedIdx, len(idx))
+	}
+	if !bytes.HasPrefix(idx, idxSignature) {
+		return 0, fmt.Errorf("%w: missing signature", ErrCorruptedIdx)
+	}
+	if version := binary.BigEndian.Uint32(idx[len(idxSignature):]); version != idxSupported {
+		return 0, fmt.Errorf("%w: unsupported version %d", ErrCorruptedIdx, version)
 	}
 
-	var nr uint32
+	var count uint32
 	for i := range idxFanoutSize / 4 {
 		n := binary.BigEndian.Uint32(idx[idxHeaderSize+i*4:])
-		if n < nr {
-			return 0, fmt.Errorf("%w: non-monotonic fanout at entry %d", ErrCorruptedIdx, i)
+		if n < count {
+			return 0, fmt.Errorf("%w: fanout entry %d holds %d, less than the %d before it", ErrCorruptedIdx, i, n, count)
 		}
-		nr = n
+		count = n
 	}
 
-	// Computed in uint64 so that the bounds cannot overflow on 32-bit
-	// platforms.
-	minLen := uint64(idxHeaderSize+idxFanoutSize+2*hashSize) + uint64(nr)*uint64(hashSize+idxCrcSize+off32Size)
-	maxLen := minLen
-	if nr > 0 {
-		maxLen += uint64(nr-1) * off64Size
+	// A count near 1<<32 overflows int on 32-bit platforms, so the sizes
+	// are worked out in 64 bits.
+	perObject := uint64(hashSize + idxCrcSize + off32Size)
+	smallest := uint64(idxHeaderSize+idxFanoutSize+2*hashSize) + uint64(count)*perObject
+	largest := smallest
+	if count > 0 {
+		largest += uint64(count-1) * off64Size
 	}
-	if size := uint64(len(idx)); size < minLen || size > maxLen {
-		return 0, fmt.Errorf("%w: %d objects need %d to %d bytes, file has %d", ErrCorruptedIdx, nr, minLen, maxLen, size)
+	if size := uint64(len(idx)); size < smallest || size > largest {
+		return 0, fmt.Errorf("%w: %d objects need %d to %d bytes, file has %d", ErrCorruptedIdx, count, smallest, largest, size)
 	}
-	return int(nr), nil
+
+	return int(count), nil
 }

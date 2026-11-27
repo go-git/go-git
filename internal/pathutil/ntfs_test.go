@@ -1,9 +1,13 @@
 package pathutil
 
 import (
+	"strings"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
+
+	"github.com/go-git/go-git/v6/internal/test/gitenv"
 )
 
 func TestWin32ValidPath(t *testing.T) {
@@ -195,6 +199,41 @@ func TestIsNTFSDot(t *testing.T) {
 		{"plain readme.md", "readme.md", "gitmodules", "gi7eba", false},
 		{"empty string", "", "gitmodules", "gi7eba", false},
 		{"only dot", ".", "gitmodules", "gi7eba", false},
+		// The hash-style short name keeps eight characters however long
+		// its number grows, at the expense of the prefix.
+		{"hashed with two digits", "gi7eb~12", "gitmodules", "gi7eba", true},
+		{"hashed with three digits", "GI7E~123", "gitmodules", "gi7eba", true},
+		{"hashed with number only", "~1234567", "gitmodules", "gi7eba", true},
+		{"hashed number starting at zero", "gi7eba~0", "gitmodules", "gi7eba", false},
+		{"hashed with a later zero", "gi7e~103", "gitmodules", "gi7eba", true},
+		{"hashed with a letter in the number", "gi7e~1a3", "gitmodules", "gi7eba", false},
+		{"hashed followed by text", "gi7eba~1x", "gitmodules", "gi7eba", false},
+		{"hashed followed by spaces and stream", "gi7eba~1 . :x", "gitmodules", "gi7eba", true},
+		{"hashed one character short", "gi7e~12", "gitmodules", "gi7eba", false},
+		{"hashed with non-ASCII byte", "gi7e\xe9~12", "gitmodules", "gi7eba", false},
+		{"hashed without a prefix to match", "gi7eba~1", "gitmodules", "", false},
+		{"short ~0 not valid", "gitmod~0", "gitmodules", "gi7eba", false},
+		{"short with trailing period", "gitmod~4.", "gitmodules", "gi7eba", true},
+		{"short followed by a digit", "gitmod~12", "gitmodules", "gi7eba", false},
+		{"short of a name under six characters", "git~1", "git", "", false},
+		{"stream after spaces and periods", ".gitmodules . :x", "gitmodules", "gi7eba", true},
+		{"stream named $DATA", ".gitmodules::$DATA", "gitmodules", "gi7eba", true},
+		{"extension", ".gitmodules.x", "gitmodules", "gi7eba", false},
+		{"leading text", "x.gitmodules", "gitmodules", "gi7eba", false},
+		{"long s is not an s", ".gitmodule\u017f", "gitmodules", "gi7eba", false},
+		// An empty name stands for the directory itself, "." for its parent.
+		{"current directory", ".", "", "", true},
+		{"current directory with space", ". ", "", "", true},
+		{"current directory with stream", ".:x", "", "", true},
+		{"run of periods", "...", "", "", true},
+		{"empty component", "", "", "", false},
+		{"space before the period", " .", "", "", false},
+		{"period then text", ".a", "", "", false},
+		{"parent directory", "..", ".", "", true},
+		{"parent directory with space", ".. ", ".", "", true},
+		{"parent directory with stream", "..::$INDEX_ALLOCATION", ".", "", true},
+		{"single period is not the parent", ".", ".", "", false},
+		{"period and space is not the parent", ". .", ".", "", false},
 	}
 
 	for _, tc := range tests {
@@ -299,5 +338,170 @@ func TestWin32ValidPathTrailingRuleMatchesUpstream(t *testing.T) {
 	for _, part := range generateComponents(t, ". a:", 5) {
 		assert.Equal(t, upstreamRejects(part), endsInSpaceOrPeriod(part),
 			"component %q", part)
+	}
+}
+
+// TestIsNTFSDotMatchesGit stores each candidate name as a symbolic link in
+// a tree of its own and checks that the four metadata predicates flag the
+// names git fsck reports as a symlinked .gitmodules, .gitattributes,
+// .gitignore or .mailmap. The candidates are ASCII apart from a few bytes
+// that must not match, so the HFS+ rules fsck applies as well stay out of
+// the picture.
+func TestIsNTFSDotMatchesGit(t *testing.T) {
+	t.Parallel()
+
+	if testing.Short() {
+		t.Skip("oracle disabled: -short")
+	}
+	gitenv.RequireAtLeast(t, 2, 32, "fsck reporting symlinked .gitattributes, .gitignore and .mailmap")
+
+	families := []struct {
+		dotgit, shortnamePrefix, fsckMessage string
+		isAlias                              func(string) bool
+	}{
+		{"gitmodules", "gi7eba", "gitmodulesSymlink", IsNTFSDotGitmodules},
+		{"gitattributes", "gi7d29", "gitattributesSymlink", IsNTFSDotGitattributes},
+		{"gitignore", "gi250a", "gitignoreSymlink", IsNTFSDotGitignore},
+		{"mailmap", "maba30", "mailmapSymlink", IsNTFSDotMailmap},
+	}
+
+	candidates := map[string]struct{}{}
+	for _, f := range families {
+		long, six, hashed := "."+f.dotgit, f.dotgit[:6], f.shortnamePrefix
+		for _, c := range []string{
+			long, strings.ToUpper(long), long + ".", long + "  ", long + "::$DATA", long + " . :x",
+			long + ":", long + "x", long + ".x", long + " x", "x" + long, f.dotgit, " " + long,
+			strings.Replace(long, "s", "ſ", 1), long[:len(long)-1],
+
+			six + "~1", six + "~2", six + "~3", six + "~4", six + "~0", six + "~5", six + "~9",
+			strings.ToUpper(six) + "~1", six + "~4.", six + "~1:stream", six + "~1 . ", six + "~1 . :x",
+			six + "~12", six + "~1x", six + "~", six + "x1", six[:5] + "~1", six[:5] + "~12",
+			six[:5] + "\xe9~1", "." + six + "~1",
+
+			hashed + "~1", strings.ToUpper(hashed) + "~9", hashed + "~0", hashed + "X1", hashed + "~1x",
+			hashed + "~1.", hashed + "~1:x", hashed + "~1 :x", hashed + "~", hashed + "~~",
+			hashed[:5] + "~12", hashed[:5] + "~1", hashed[:5] + "~02", hashed[:5] + "~10",
+			hashed[:4] + "~123", hashed[:4] + "~023", hashed[:4] + "~103", hashed[:4] + "~1a3",
+			hashed[:4] + "~12", hashed[:4] + "~1234", hashed[:4] + "~~12", hashed[:4] + "~1~2",
+			hashed[:4] + "x~12", "x" + hashed[:4] + "~12", hashed[:4] + "\xe9~12",
+			hashed[:3] + "~1234", hashed[:2] + "~12345", hashed[:1] + "~123456",
+			hashed[1:] + "~12", hashed[:2] + hashed[3:] + "~12",
+		} {
+			candidates[c] = struct{}{}
+		}
+	}
+	for _, c := range []string{
+		"~1234567", "~0234567", "~123456", "~12345678", "~1234567.", "~1234567:x", "~123456x",
+		"\xe9~123456", "12345678", "~~~~~~~~", "readme.md", "~1", ".git",
+	} {
+		candidates[c] = struct{}{}
+	}
+
+	dir := t.TempDir()
+	runGit := func(stdin string, args ...string) string {
+		t.Helper()
+
+		cmd := gitenv.CommandContext(t.Context(), "git", args...)
+		cmd.Dir = dir
+		cmd.Stdin = strings.NewReader(stdin)
+		out, err := cmd.CombinedOutput()
+		require.NoError(t, err, "git %s: %s", strings.Join(args, " "), out)
+		return string(out)
+	}
+
+	runGit("", "init", "-q", "--bare", ".")
+	blob := strings.TrimSpace(runGit("target", "hash-object", "-w", "--stdin"))
+	nameOfTree := map[string]string{}
+	for name := range candidates {
+		tree := strings.TrimSpace(runGit("120000 blob "+blob+"\t"+name+"\x00", "mktree", "-z"))
+		nameOfTree[tree] = name
+	}
+
+	// "error in tree <id>: gitmodulesSymlink: ..." or "warning in tree ...".
+	reported := map[string]map[string]bool{}
+	for line := range strings.Lines(runGit("", "-c", "fsck.gitmodulesSymlink=warn", "fsck", "--no-dangling")) {
+		fields := strings.Fields(line)
+		if len(fields) < 5 || fields[1] != "in" || fields[2] != "tree" {
+			continue
+		}
+		name, ok := nameOfTree[strings.TrimSuffix(fields[3], ":")]
+		require.True(t, ok, "fsck reported an unknown tree: %s", line)
+		message := strings.TrimSuffix(fields[4], ":")
+		if reported[message] == nil {
+			reported[message] = map[string]bool{}
+		}
+		reported[message][name] = true
+	}
+
+	for _, f := range families {
+		require.NotEmpty(t, reported[f.fsckMessage], "git fsck reported no %s", f.fsckMessage)
+		for name := range candidates {
+			assert.Equal(t, reported[f.fsckMessage][name], f.isAlias(name),
+				"%q as an alias of .%s", name, f.dotgit)
+		}
+	}
+}
+
+// TestIsNTFSDotGitMatchesGit stores each candidate name in a tree of its own
+// and checks that IsNTFSDotGit flags the names git fsck reports as a ".git"
+// entry. The candidates are ASCII, so the HFS+ rules fsck applies as well
+// flag none of them that the NTFS rules do not.
+func TestIsNTFSDotGitMatchesGit(t *testing.T) {
+	t.Parallel()
+
+	if testing.Short() {
+		t.Skip("oracle disabled: -short")
+	}
+	gitenv.RequireAtLeast(t, 2, 32, "the fsck report format this test reads")
+
+	candidates := make([]string, 0, 160)
+	for _, name := range []string{".git", ".GIT", ".Git", "git~1", "GIT~1", "Git~1"} {
+		for _, tail := range []string{
+			"", ".", " ", "..", "  ", " . ", ". .", ":", ":x", "::$DATA", " :x", ". :x", " . :", ".:",
+			"x", " x", ".x", "x.", "x:", " x:y", "~1", "2",
+		} {
+			candidates = append(candidates, name+tail)
+		}
+	}
+	candidates = append(candidates,
+		"git", ".gi", ".gitt", "x.git", " .git", "..git", ":.git", "git~", "git~2", "git~0", "git~10",
+		"gi~1", ".git~1", "git ~1", "git~ 1", "g:it~1", ".g:it", ".gitmodules", "readme.md", "~1",
+	)
+
+	dir := t.TempDir()
+	runGit := func(stdin string, args ...string) string {
+		t.Helper()
+
+		cmd := gitenv.CommandContext(t.Context(), "git", args...)
+		cmd.Dir = dir
+		cmd.Stdin = strings.NewReader(stdin)
+		out, err := cmd.CombinedOutput()
+		require.NoError(t, err, "git %s: %s", strings.Join(args, " "), out)
+		return string(out)
+	}
+
+	runGit("", "init", "-q", "--bare", ".")
+	blob := strings.TrimSpace(runGit("content", "hash-object", "-w", "--stdin"))
+	nameOfTree := map[string]string{}
+	for _, name := range candidates {
+		tree := strings.TrimSpace(runGit("100644 blob "+blob+"\t"+name+"\x00", "mktree", "-z"))
+		nameOfTree[tree] = name
+	}
+
+	// "warning in tree <id>: hasDotgit: contains '.git'".
+	reported := map[string]bool{}
+	for line := range strings.Lines(runGit("", "fsck", "--no-dangling")) {
+		fields := strings.Fields(line)
+		if len(fields) < 5 || fields[1] != "in" || fields[2] != "tree" || fields[4] != "hasDotgit:" {
+			continue
+		}
+		name, ok := nameOfTree[strings.TrimSuffix(fields[3], ":")]
+		require.True(t, ok, "fsck reported an unknown tree: %s", line)
+		reported[name] = true
+	}
+	require.NotEmpty(t, reported, "git fsck reported no hasDotgit")
+
+	for _, name := range candidates {
+		assert.Equal(t, reported[name], IsNTFSDotGit(name), "IsNTFSDotGit(%q)", name)
 	}
 }

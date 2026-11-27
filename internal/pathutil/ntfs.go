@@ -2,45 +2,22 @@ package pathutil
 
 import "strings"
 
-// IsNTFSDotGit ports upstream Git's is_ntfs_dotgit. It detects path
-// components that NTFS would resolve to ".git": the canonical name
-// itself and its 8.3 short-name alias "git~1", each followed by any
-// number of trailing spaces or periods (which NTFS silently trims)
-// and an optional Alternate Data Stream suffix (":<stream>"). The
-// bare strings ".git" and "git~1" also match, mirroring upstream.
+// IsNTFSDotGit reports whether part, a path component, is a spelling NTFS
+// resolves to ".git": the name itself or its 8.3 short name "git~1", in any
+// case, followed by any number of spaces and periods, which NTFS drops, and
+// optionally by an alternate data stream suffix (":<stream>").
 //
-// Reference: upstream Git path.c is_ntfs_dotgit at L1415-L1449
-// in tag v2.54.0[1].
-//
-// [1]: https://github.com/git/git/blob/v2.54.0/path.c#L1415-L1449
+// Git refuses the same components under core.protectNTFS; see the
+// description of that setting in git-config(1).
 func IsNTFSDotGit(part string) bool {
-	var i int
-	switch {
-	case len(part) >= 4 && part[0] == '.' &&
-		asciiToLower(part[1]) == 'g' &&
-		asciiToLower(part[2]) == 'i' &&
-		asciiToLower(part[3]) == 't':
-		i = 4
-	case len(part) >= 5 &&
-		asciiToLower(part[0]) == 'g' &&
-		asciiToLower(part[1]) == 'i' &&
-		asciiToLower(part[2]) == 't' &&
-		part[3] == '~' && part[4] == '1':
-		i = 5
-	default:
+	// Every alias starts with one of the two names, so most components are
+	// settled by their first bytes.
+	if !hasASCIIFoldPrefix(part, ".git") && !hasASCIIFoldPrefix(part, "git~1") {
 		return false
 	}
-
-	for ; i < len(part); i++ {
-		c := part[i]
-		if c == ':' {
-			return true
-		}
-		if c != '.' && c != ' ' {
-			return false
-		}
-	}
-	return true
+	base, _, _ := strings.Cut(part, ":")
+	base = strings.TrimRight(base, " .")
+	return asciiEqualFold(base, ".git") || asciiEqualFold(base, "git~1")
 }
 
 // IsNTFSDotDot reports whether part is an NTFS spelling of ".."
@@ -156,16 +133,12 @@ func isWindowsReservedName(part string) bool {
 // opens "foo", and ".gitattributes " collides with
 // ".gitattributes".
 //
-// Ports the segment-boundary condition of upstream Git's
-// is_valid_win32_path at compat/mingw.c L3363-L3366 in tag
-// v2.54.0[1]:
-//
-//	preceding_space_or_period && (i != periods || periods > 2)
-//
-// `i != periods` is false only for a component of periods alone, and
-// `periods > 2` then caps that exception at "." and "..", so the
-// condition reduces to the two-name exception written literally
-// below.
+// Upstream Git makes the same check at each segment boundary in
+// is_valid_win32_path, at compat/mingw.c L3363-L3366 in tag
+// v2.54.0[1]: a segment may not end in a space or a period, unless
+// it is made of periods only and is no longer than two of them. That
+// leaves "." and ".." as the only exceptions, which is how the rule
+// is written below.
 //
 // [1]: https://github.com/git/git/blob/v2.54.0/compat/mingw.c#L3363-L3366
 func endsInSpaceOrPeriod(part string) bool {
@@ -176,111 +149,82 @@ func endsInSpaceOrPeriod(part string) bool {
 	return c == ' ' || c == '.'
 }
 
-// IsNTFSDot ports upstream Git's is_ntfs_dot_generic. It detects NTFS
-// path-component variants of a dotfile name that attackers can use to
-// bypass case-insensitive comparisons against the canonical name on
-// Windows. The dotgit parameter is the lowercase name without the
-// leading dot (e.g. "gitmodules"); shortnamePrefix is the canonical
-// 6-character NTFS short-name prefix used as a fall-back match
-// (e.g. "gi7eba" for ".gitmodules").
+// IsNTFSDot reports whether name, a path component, is a spelling NTFS
+// resolves to the file "." + dotgit. dotgit is the lowercase name without
+// its leading dot ("gitmodules"), and shortnamePrefix the six-character
+// prefix of the hash-style short name NTFS generates for it ("gi7eba"), or
+// empty to leave that form out.
 //
-// Reference: upstream Git path.c is_ntfs_dot_generic at L1451-L1507
-// in tag v2.54.0[1].
+// NTFS compares names without regard to case, drops trailing spaces and
+// periods, and takes everything from the first colon on as the name of an
+// alternate data stream of the same file. Besides its long name a file
+// answers to an 8.3 short name: the first six characters, "~" and a digit
+// from 1 to 4, or, once those are taken, a prefix derived from a hash of
+// the name, "~" and a number, eight characters in all.
 //
-// [1]: https://github.com/git/git/blob/v2.54.0/path.c#L1451-L1507
+// An empty dotgit matches every component NTFS reduces to a bare dot,
+// "." and ".." included.
 func IsNTFSDot(name, dotgit, shortnamePrefix string) bool {
-	// onlySpacesAndPeriods returns true when the suffix from start
-	// onwards consists only of trailing spaces and periods, possibly
-	// terminated by a NTFS Alternate Data Stream colon. Mirrors the
-	// only_spaces_and_periods label in upstream's is_ntfs_dot_generic.
-	onlySpacesAndPeriods := func(start int) bool {
-		for i := start; i < len(name); i++ {
-			c := name[i]
-			if c == ':' {
-				return true
-			}
-			if c != ' ' && c != '.' {
-				return false
-			}
-		}
+	const shortNameLen = 8
+
+	// Every alias starts with a dot or has a tilde in its short name, so
+	// most names are settled without looking further.
+	if name == "" || (name[0] != '.' && strings.IndexByte(name[:min(shortNameLen, len(name))], '~') < 0) {
+		return false
+	}
+	// A name that starts with a dot can only be the long form.
+	if name[0] == '.' && !hasASCIIFoldPrefix(name[1:], dotgit) {
+		return false
+	}
+
+	base, _, _ := strings.Cut(name, ":")
+
+	if rest, ok := strings.CutPrefix(base, "."); ok && len(rest) >= len(dotgit) &&
+		asciiEqualFold(rest[:len(dotgit)], dotgit) &&
+		strings.Trim(rest[len(dotgit):], " .") == "" {
 		return true
 	}
 
-	// Pattern 1: ".<dotgit>" prefix + trailing spaces / periods / ADS.
-	if len(name) >= len(dotgit)+1 && name[0] == '.' &&
-		strings.EqualFold(name[1:1+len(dotgit)], dotgit) {
-		if onlySpacesAndPeriods(len(dotgit) + 1) {
-			return true
-		}
-	}
-
-	// Pattern 2: standard NTFS short name <dotgit[:6]>~[1-4].
-	if len(dotgit) >= 6 && len(name) >= 8 &&
-		strings.EqualFold(name[:6], dotgit[:6]) &&
-		name[6] == '~' && name[7] >= '1' && name[7] <= '4' {
-		if onlySpacesAndPeriods(8) {
-			return true
-		}
-	}
-
-	// Pattern 3: fall-back NTFS short name keyed by shortnamePrefix.
-	if len(shortnamePrefix) < 6 || len(name) < 8 {
+	if len(base) < shortNameLen || strings.Trim(base[shortNameLen:], " .") != "" {
 		return false
 	}
-	sawTilde := false
-	i := 0
-	for i < 8 {
-		c := name[i]
-		switch {
-		case sawTilde:
-			if c < '0' || c > '9' {
-				return false
-			}
-		case c == '~':
-			i++
-			if i >= len(name) || name[i] < '1' || name[i] > '9' {
-				return false
-			}
-			sawTilde = true
-		case i >= 6:
-			return false
-		case c&0x80 != 0:
-			return false
-		default:
-			if asciiToLower(c) != shortnamePrefix[i] {
-				return false
-			}
-		}
-		i++
+	stem, number, ok := strings.Cut(base[:shortNameLen], "~")
+	if !ok {
+		return false
 	}
-	return onlySpacesAndPeriods(8)
+
+	if len(stem) == 6 && len(dotgit) >= 6 && asciiEqualFold(stem, dotgit[:6]) &&
+		number[0] >= '1' && number[0] <= '4' {
+		return true
+	}
+
+	return len(shortnamePrefix) == 6 && len(stem) <= 6 &&
+		asciiEqualFold(stem, shortnamePrefix[:len(stem)]) &&
+		number[0] != '0' && strings.Trim(number, "0123456789") == ""
 }
 
-// IsNTFSDotGitmodules reports whether part is an NTFS equivalent of
-// ".gitmodules" — the file name or any variant that NTFS would
-// resolve to it. The 6-character canonical short-name prefix "gi7eba"
-// mirrors upstream Git's is_ntfs_dotgitmodules.
+// IsNTFSDotGitmodules reports whether part is a name NTFS resolves to
+// ".gitmodules": the name itself in any case, with trailing spaces,
+// periods or a stream suffix, or one of its short names. "gi7eba" is the
+// prefix of the hash-style short name NTFS gives ".gitmodules".
 func IsNTFSDotGitmodules(part string) bool {
 	return IsNTFSDot(part, "gitmodules", "gi7eba")
 }
 
-// IsNTFSDotGitattributes reports whether part is an NTFS equivalent
-// of ".gitattributes". The short-name prefix "gi7d29" mirrors upstream
-// Git's is_ntfs_dotgitattributes.
+// IsNTFSDotGitattributes reports whether part is a name NTFS resolves to
+// ".gitattributes", whose hash-style short name starts with "gi7d29".
 func IsNTFSDotGitattributes(part string) bool {
 	return IsNTFSDot(part, "gitattributes", "gi7d29")
 }
 
-// IsNTFSDotGitignore reports whether part is an NTFS equivalent of
-// ".gitignore". The short-name prefix "gi250a" mirrors upstream Git's
-// is_ntfs_dotgitignore.
+// IsNTFSDotGitignore reports whether part is a name NTFS resolves to
+// ".gitignore", whose hash-style short name starts with "gi250a".
 func IsNTFSDotGitignore(part string) bool {
 	return IsNTFSDot(part, "gitignore", "gi250a")
 }
 
-// IsNTFSDotMailmap reports whether part is an NTFS equivalent of
-// ".mailmap". The short-name prefix "maba30" mirrors upstream Git's
-// is_ntfs_dotmailmap.
+// IsNTFSDotMailmap reports whether part is a name NTFS resolves to
+// ".mailmap", whose hash-style short name starts with "maba30".
 func IsNTFSDotMailmap(part string) bool {
 	return IsNTFSDot(part, "mailmap", "maba30")
 }
@@ -290,4 +234,24 @@ func asciiToLower(c byte) byte {
 		return c + ('a' - 'A')
 	}
 	return c
+}
+
+// asciiEqualFold reports whether a and b are equal when ASCII letters are
+// compared without regard to case. Unlike strings.EqualFold it folds
+// nothing else, so no non-ASCII character is taken for a letter.
+// hasASCIIFoldPrefix reports whether s starts with prefix, ASCII case aside.
+func hasASCIIFoldPrefix(s, prefix string) bool {
+	return len(s) >= len(prefix) && asciiEqualFold(s[:len(prefix)], prefix)
+}
+
+func asciiEqualFold(a, b string) bool {
+	if len(a) != len(b) {
+		return false
+	}
+	for i := 0; i < len(a); i++ {
+		if asciiToLower(a[i]) != asciiToLower(b[i]) {
+			return false
+		}
+	}
+	return true
 }
