@@ -1,6 +1,7 @@
 package git
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"fmt"
@@ -1208,19 +1209,39 @@ func (w *Worktree) copyObjectToWorktree(cfg *config.Config, object *object.File,
 	defer ioutil.CheckClose(src, &err)
 
 	if cfg.Core.AutoCRLF == "true" {
-		br := sync.GetBufioReader(src)
-		defer sync.PutBufioReader(br)
+		// Blobs above this size are read twice rather than held in memory.
+		const maxBufferedBlob = 1 << 20
 
-		stat, err := convert.GetStat(br)
-		if err != nil {
-			return err
-		}
+		var stat convert.Stat
+		if object.Size > maxBufferedBlob {
+			br := sync.GetBufioReader(src)
+			defer sync.PutBufioReader(br)
 
-		src, err = object.Reader()
-		if err != nil {
-			return err
+			stat, err = convert.GetStat(br)
+			if err != nil {
+				return err
+			}
+
+			src, err = object.Reader()
+			if err != nil {
+				return err
+			}
+			defer ioutil.CheckClose(src, &err)
+		} else {
+			buf := sync.GetBytesBuffer()
+			defer sync.PutBytesBuffer(buf)
+
+			if _, err = buf.ReadFrom(src); err != nil {
+				return err
+			}
+
+			stat, err = convert.GetStat(bytes.NewReader(buf.Bytes()))
+			if err != nil {
+				return err
+			}
+
+			src = io.NopCloser(buf)
 		}
-		defer ioutil.CheckClose(src, &err)
 
 		if !stat.IsBinary() {
 			dst = convert.NewCRLFWriter(dst)

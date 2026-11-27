@@ -843,6 +843,81 @@ func (s *WorktreeSuite) TestCheckoutCRLF() {
 	})
 }
 
+type countingEncodedObject struct {
+	*plumbing.MemoryObject
+	reads *int
+}
+
+func (c *countingEncodedObject) Reader() (io.ReadCloser, error) {
+	*c.reads++
+	return c.MemoryObject.Reader()
+}
+
+func (s *WorktreeSuite) TestCheckoutAutoCRLFBlobReads() {
+	largeText := bytes.Repeat([]byte("line\n"), 300_000)
+
+	tests := []struct {
+		name     string
+		content  []byte
+		expected []byte
+		reads    int
+	}{
+		{
+			name:     "text gets LF to CRLF conversion",
+			content:  []byte("line1\nline2\n"),
+			expected: []byte("line1\r\nline2\r\n"),
+			reads:    1,
+		},
+		{
+			name:     "binary is written verbatim",
+			content:  []byte("NUL\x00binary\n"),
+			expected: []byte("NUL\x00binary\n"),
+			reads:    1,
+		},
+		{
+			name:     "large text is streamed instead of buffered",
+			content:  largeText,
+			expected: bytes.ReplaceAll(largeText, []byte("\n"), []byte("\r\n")),
+			reads:    2,
+		},
+	}
+
+	for _, tc := range tests {
+		s.Run(tc.name, func() {
+			mo := plumbing.NewMemoryObject(nil)
+			mo.SetType(plumbing.BlobObject)
+			_, err := mo.Write(tc.content)
+			require.NoError(s.T(), err)
+
+			var reads int
+			blob, err := object.DecodeBlob(&countingEncodedObject{MemoryObject: mo, reads: &reads})
+			require.NoError(s.T(), err)
+
+			fs := memfs.New()
+			f, err := fs.OpenFile("file", os.O_WRONLY|os.O_CREATE|os.O_TRUNC, 0o644)
+			require.NoError(s.T(), err)
+
+			cfg := config.NewConfig()
+			cfg.Core.AutoCRLF = "true"
+
+			err = (&Worktree{}).copyObjectToWorktree(
+				cfg, object.NewFile("file", filemode.Regular, blob), f,
+			)
+			require.NoError(s.T(), err)
+			require.NoError(s.T(), f.Close())
+
+			got, err := fs.Open("file")
+			require.NoError(s.T(), err)
+			defer got.Close()
+
+			content, err := io.ReadAll(got)
+			require.NoError(s.T(), err)
+			s.Equal(tc.expected, content)
+			s.Equal(tc.reads, reads)
+		})
+	}
+}
+
 func (s *WorktreeSuite) TestFilenameNormalization() {
 	if runtime.GOOS == "windows" {
 		s.T().Skip("windows paths may contain non utf-8 sequences")
