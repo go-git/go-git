@@ -9,31 +9,17 @@ import "errors"
 type RepositoryFormatVersion string
 
 const (
-	// Version0 is the format defined by the initial version of git,
-	// including but not limited to the format of the repository
-	// directory, the repository configuration file, and the object
-	// and ref storage.
-	//
-	// Specifying the complete behavior of git is beyond the scope
-	// of this document.
+	// Version0 is the original repository format. Extensions are not part
+	// of it.
 	Version0 = "0"
 
-	// Version1 is identical to version 0, with the following exceptions:
+	// Version1 is Version0 with support for extensions: the keys of the
+	// extensions section of the configuration file take effect, and a
+	// repository that sets one the implementation does not know, or sets
+	// a known one to a value it does not understand, must be refused.
 	//
-	//   1. When reading the core.repositoryformatversion variable, a git
-	//		implementation which supports version 1 MUST also read any
-	//		configuration keys found in the extensions section of the
-	//		configuration file.
-	//
-	//	 2. If a version-1 repository specifies any extensions.* keys that
-	//		the running git has not implemented, the operation MUST NOT proceed.
-	//		Similarly, if the value of any known key is not understood by the
-	//		implementation, the operation MUST NOT proceed.
-	//
-	// Note that if no extensions are specified in the config file, then
-	// core.repositoryformatversion SHOULD be set to 0 (setting it to 1 provides
-	// no benefit, and makes the repository incompatible with older
-	// implementations of git).
+	// A repository that uses no extensions gains nothing from this version
+	// and is better left at Version0, which older implementations can read.
 	Version1 = "1"
 
 	// DefaultRepositoryFormatVersion holds the default repository format version.

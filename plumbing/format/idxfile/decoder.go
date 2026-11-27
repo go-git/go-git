@@ -40,7 +40,7 @@ const (
 
 // Input is the input to a [Decoder]. The decoder reads loose-object
 // bytes from it and calls Stat to learn the on-disk length, which it
-// uses to validate the canonical-Git size formula before any
+// uses to validate the size bounds before any
 // allocations driven by the fanout table.
 //
 // [os.File] and the go-billy [File] type satisfy Input directly.
@@ -247,16 +247,19 @@ func readIdxChecksum(idx *MemoryIndex, r io.Reader) error {
 	return nil
 }
 
-// validateIdxV2Size enforces the size formula used by canonical Git
-// load_idx for idx v2 files: the on-disk length must lie within
-// [minSize, maxSize] where
+// validateIdxV2Size checks that the length of an idx v2 file fits the object
+// count its fanout declares. The length must lie within [minSize, maxSize]
+// where
 //
 //	perObject = hashsz + crc32Len + offset32Len
 //	minSize   = headerLen + fanoutLen + trailerHashes*hashsz + nr*perObject
 //	maxSize   = minSize + (nr-1)*offset64Len     when nr > 0
 //
 // with nr taken from the last fanout entry and hashsz from the
-// configured object ID size. Multiplications use a self-checking
+// configured object ID size. The 64-bit offset table holds an entry only
+// for an object that lies beyond the reach of a 31-bit offset, which the
+// first object of a pack never does, so it has at most nr-1 entries. Git
+// applies the same bounds when it opens an index. Multiplications use a self-checking
 // overflow guard so inputs whose claimed object count overflows the
 // formula are rejected rather than wrapping into a smaller value.
 func validateIdxV2Size(idx *MemoryIndex, idxSize int64) error {
@@ -276,8 +279,8 @@ func validateIdxV2Size(idx *MemoryIndex, idxSize int64) error {
 }
 
 // minIdxV2Size returns the minimum on-disk size of an idx v2 file
-// holding nr objects with the given hash size, mirroring the
-// computation in canonical Git load_idx. Returns -1 when any
+// holding nr objects with the given hash size: the fixed parts and one
+// record per object, with no 64-bit offsets. Returns -1 when any
 // intermediate multiplication or addition would overflow int64.
 func minIdxV2Size(nr, hashsz int64) int64 {
 	perObject := hashsz + crc32Len + offset32Len
@@ -295,8 +298,8 @@ func minIdxV2Size(nr, hashsz int64) int64 {
 }
 
 // maxIdxV2Size returns the maximum on-disk size of an idx v2 file
-// holding nr objects with the given hash size, mirroring the
-// computation in canonical Git load_idx. Returns -1 on overflow.
+// holding nr objects with the given hash size: the minimum plus a 64-bit
+// offset for every object but the first. Returns -1 on overflow.
 func maxIdxV2Size(nr, hashsz int64) int64 {
 	minSize := minIdxV2Size(nr, hashsz)
 	if minSize < 0 {

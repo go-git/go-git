@@ -7,11 +7,10 @@ import "strings"
 // components (and as submodule names) because they refer to the
 // repository's own metadata directory.
 //
-// File names that do not conform to the 8.3 format (up to eight
-// characters for the basename, three for the file extension) are
-// associated with a so-called "short name" on NTFS — at least on
-// the `C:` drive by default — which means that `git~1/` is a valid
-// way to refer to `.git/`.
+// NTFS can give a file whose name does not fit the 8.3 pattern a second,
+// generated short name, and usually does so on the system drive. For
+// `.git` that short name is `git~1`, so either spelling reaches the
+// same directory.
 func IsDotGitName(name string) bool {
 	switch strings.ToLower(name) {
 	case ".git", "git~1":

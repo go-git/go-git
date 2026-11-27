@@ -657,11 +657,8 @@ func referenceStorageFromRefs(refs []*plumbing.Reference, filterPeeled bool) mem
 // storer will not take can arrive even after the advertisement has been
 // filtered — "+refs/*:refs/*" onto a remote name go-git holds to a stricter
 // rule than check_refname_format, say. Git answers per-reference rather than
-// per-fetch, in get_fetch_map:
-//
-//	error(_("* Ignoring funny ref '%s' locally"), (*rmp)->peer_ref->name);
-//
-// and finishes with the references that remain, exiting 0.
+// per-fetch: get_fetch_map (remote.c) reports the name it is ignoring, and the
+// fetch finishes with the references that remain, exiting 0.
 //
 // Every arm of the storer's name gate wraps plumbing.ErrInvalidReferenceName,
 // so this recognises all of them rather than the format rule alone. That
@@ -689,15 +686,9 @@ func unstorableRefName(name, source plumbing.ReferenceName, err error) bool {
 // out of the storer, so a single unusable name costs that one reference rather
 // than the whole fetch.
 //
-// This is filter_refs in fetch-pack.c, which checks the same thing in the same
-// place and says nothing about it:
-//
-//	if (starts_with(ref->name, "refs/") &&
-//	    check_refname_format(ref->name, 0)) {
-//		/* trash or a peeled value; do not even add it to unmatched list */
-//		free_one_ref(ref);
-//		continue;
-//	}
+// This is what Git does in filter_refs (fetch-pack.c): an advertised name under
+// refs/ that fails the format check is dropped without a message, before it
+// can be matched against anything.
 //
 // Only names under refs/ are judged, as there: HEAD is advertised and is not
 // one. Git also relies on this to drop the null-object-id entries it emits for

@@ -1,4 +1,3 @@
-// Package packp implements encoding and decoding of the Git packfile protocol messages.
 package packp
 
 import (
