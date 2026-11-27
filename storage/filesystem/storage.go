@@ -146,9 +146,9 @@ func NewStorage(fs billy.Filesystem, cache cache.Object) *Storage {
 // Returns an error if an explicit ObjectFormat is provided via options
 // but conflicts with an existing config in the filesystem.
 func NewStorageWithOptions(fs billy.Filesystem, c cache.Object, ops Options) *Storage {
-	// Reverse index defaults (true); overridden by repo config below.
-	readRevIdx := true
-	writeRevIdx := true
+	// Reverse index is read and written by default. Repo config overrides below.
+	skipReadRevIdx := false
+	skipWriteRevIdx := false
 	skipHash := false
 
 	f, err := fs.Open("config")
@@ -156,8 +156,8 @@ func NewStorageWithOptions(fs billy.Filesystem, c cache.Object, ops Options) *St
 		cfg, err := config.ReadConfig(f)
 		if err == nil {
 			ops.ObjectFormat = cfg.Extensions.ObjectFormat
-			readRevIdx = cfg.Pack.ReadReverseIndex
-			writeRevIdx = cfg.Pack.WriteReverseIndex
+			skipReadRevIdx = !cfg.Pack.ReadReverseIndex
+			skipWriteRevIdx = !cfg.Pack.WriteReverseIndex
 			skipHash = cfg.Index.SkipHash.IsTrue()
 		}
 
@@ -175,12 +175,12 @@ func NewStorageWithOptions(fs billy.Filesystem, c cache.Object, ops Options) *St
 	}
 
 	dirOps := dotgit.Options{
-		ExclusiveAccess:   ops.ExclusiveAccess,
-		AlternatesFS:      ops.AlternatesFS,
-		ObjectFormat:      ops.ObjectFormat,
-		ReadReverseIndex:  readRevIdx,
-		WriteReverseIndex: writeRevIdx,
-		Pool:              pool,
+		ExclusiveAccess:       ops.ExclusiveAccess,
+		AlternatesFS:          ops.AlternatesFS,
+		ObjectFormat:          ops.ObjectFormat,
+		SkipReadReverseIndex:  skipReadRevIdx,
+		SkipWriteReverseIndex: skipWriteRevIdx,
+		Pool:                  pool,
 	}
 	dir := dotgit.NewWithOptions(fs, dirOps)
 
