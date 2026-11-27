@@ -194,8 +194,8 @@ func Read(r io.Reader, p []byte) (l int, err error) {
 //
 // The error can be of type *ErrorLine if the packet is an error packet.
 func ReadLine(r io.Reader) (l int, p []byte, err error) {
-	buf := GetBuffer()
-	defer PutBuffer(buf)
+	buf := getBuffer()
+	defer putBuffer(buf)
 
 	l, err = Read(r, (*buf)[:])
 	if l < LenSize {

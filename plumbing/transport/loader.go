@@ -9,7 +9,6 @@ import (
 	"strings"
 
 	"github.com/go-git/go-billy/v6"
-	"github.com/go-git/go-billy/v6/osfs"
 
 	"github.com/go-git/go-git/v6/plumbing/cache"
 	"github.com/go-git/go-git/v6/storage"
@@ -20,10 +19,6 @@ import (
 type Loader interface {
 	Load(u *url.URL) (storage.Storer, error)
 }
-
-// DefaultLoader is a filesystem loader that resolves paths against the
-// root filesystem.
-var DefaultLoader Loader = NewFilesystemLoader(osfs.New(""), false)
 
 // FilesystemLoader loads repositories from a billy.Filesystem.
 type FilesystemLoader struct {

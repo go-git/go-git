@@ -2,14 +2,32 @@ package backend
 
 import (
 	"compress/gzip"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
+	"path"
 	"regexp"
 	"strings"
 
 	"github.com/go-git/go-git/v6/plumbing/transport"
 )
+
+var (
+	// ErrUnauthorized is returned by [Backend.Authorize] when the request
+	// carries no valid credentials. ServeHTTP answers it with 401 and a
+	// WWW-Authenticate challenge, so the client asks for credentials.
+	ErrUnauthorized = errors.New("unauthorized")
+
+	// ErrForbidden is returned by [Backend.Authorize] when the request is
+	// authenticated but may not use the service. ServeHTTP answers it
+	// with 403.
+	ErrForbidden = errors.New("forbidden")
+)
+
+// authChallenge is the WWW-Authenticate value sent with a 401. git asks its
+// credential helpers for any challenge it receives.
+const authChallenge = `Basic realm="git"`
 
 type httpService struct {
 	pattern *regexp.Regexp
@@ -35,8 +53,27 @@ var httpServices = []httpService{
 // ServeHTTP implements [http.Handler]. It supports the smart HTTP protocol
 // only. The dumb protocol's requests are recognised so they can be denied,
 // rather than answered as if the endpoint did not exist.
+//
+// ServeHTTP does no authentication on its own. It follows git
+// http-backend's service policy: upload-pack is served unless disabled,
+// and receive-pack and upload-archive are served when enabled, or when
+// [Backend.Authorize] accepts the request. Without Authorize, a push is
+// refused with 403 unless [Backend.ReceivePack] is [ServiceEnabled].
+//
+// A request whose decoded path has a "." or ".." segment or an empty
+// segment, apart from a trailing slash, answers 404 before [Backend.Prefix]
+// is applied, so the path cannot step out of the prefix.
 func (b *Backend) ServeHTTP(w http.ResponseWriter, r *http.Request) {
-	urlPath := strings.TrimPrefix(r.URL.Path, b.Prefix)
+	if !isCanonicalPath(r.URL.Path) {
+		b.logf("non-canonical request path: %q", r.URL.Path)
+		renderStatusError(w, http.StatusNotFound)
+		return
+	}
+	urlPath, ok := b.trimPrefix(r.URL.Path)
+	if !ok {
+		renderStatusError(w, http.StatusNotFound)
+		return
+	}
 	for _, s := range httpServices {
 		if m := s.pattern.FindStringSubmatch(urlPath); m != nil {
 			if r.Method != s.method {
@@ -53,7 +90,45 @@ func (b *Backend) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	renderStatusError(w, http.StatusNotFound)
 }
 
+// isCanonicalPath reports whether the decoded URL path p has no "." or ".."
+// segments and no empty segments, apart from a trailing slash. A Backend
+// used directly as an [http.Server] handler does not get the path cleaning
+// that [http.ServeMux] does, and a ".." segment would otherwise step out of
+// [Backend.Prefix] before the repository path reaches the Loader. git
+// refuses the same paths with daemon_avoid_alias in path.c.
+func isCanonicalPath(p string) bool {
+	for seg := range strings.SplitSeq(p, "/") {
+		if seg == ".." {
+			return false
+		}
+	}
+	clean := path.Clean(p)
+	if strings.HasSuffix(p, "/") && clean != "/" {
+		clean += "/"
+	}
+	return clean == p
+}
+
+// trimPrefix strips b.Prefix from urlPath. The prefix matches whole path
+// segments only, so "/repo" matches "/repo/x.git" but not "/repository".
+// It reports false when urlPath is outside the prefix.
+func (b *Backend) trimPrefix(urlPath string) (string, bool) {
+	prefix := strings.TrimSuffix(b.Prefix, "/")
+	if prefix == "" {
+		return urlPath, true
+	}
+	rest, ok := strings.CutPrefix(urlPath, prefix)
+	if !ok || (rest != "" && rest[0] != '/') {
+		return "", false
+	}
+	return rest, true
+}
+
 func (b *Backend) handleServiceRPC(w http.ResponseWriter, r *http.Request, repo, svc string) {
+	if !b.authorizeHTTP(w, r, svc) {
+		return
+	}
+
 	version := r.Header.Get("Git-Protocol")
 	contentType := strings.ToLower(strings.TrimSpace(r.Header.Get("Content-Type")))
 
@@ -90,12 +165,8 @@ func (b *Backend) handleServiceRPC(w http.ResponseWriter, r *http.Request, repo,
 		return
 	}
 
-	if !b.requireReceivePackAuth(w, r, svc) {
-		return
-	}
-
 	frw := &flushResponseWriter{ResponseWriter: w, log: b.ErrorLog, chunkSize: defaultChunkSize}
-	if err := b.Serve(r.Context(), reader, frw, &Request{
+	if err := b.serve(r.Context(), reader, frw, &Request{
 		URL:          ep,
 		Service:      svc,
 		GitProtocol:  version,
@@ -128,7 +199,7 @@ func (b *Backend) handleInfoRefs(w http.ResponseWriter, r *http.Request, repo, _
 		return
 	}
 
-	if !b.requireReceivePackAuth(w, r, service) {
+	if !b.authorizeHTTP(w, r, service) {
 		return
 	}
 
@@ -145,7 +216,7 @@ func (b *Backend) handleInfoRefs(w http.ResponseWriter, r *http.Request, repo, _
 	w.Header().Set("Content-Type", fmt.Sprintf("application/x-git-%s-advertisement", transport.ServiceName(service)))
 
 	frw := &flushResponseWriter{ResponseWriter: w, log: b.ErrorLog, chunkSize: defaultChunkSize}
-	if err := b.Serve(r.Context(), nil, frw, &Request{
+	if err := b.serve(r.Context(), nil, frw, &Request{
 		URL:           ep,
 		Service:       service,
 		GitProtocol:   version,
@@ -172,11 +243,53 @@ func (b *Backend) handleDumbRequest(w http.ResponseWriter, _ *http.Request, _, _
 	renderStatusError(w, http.StatusForbidden)
 }
 
-func (b *Backend) requireReceivePackAuth(w http.ResponseWriter, r *http.Request, service string) bool {
-	// For receive-pack, require authentication as a basic sanity check.
-	if service == transport.ReceivePackService && strings.TrimSpace(r.Header.Get("Authorization")) == "" {
-		b.logf("missing Authorization header for receive-pack service")
-		renderStatusError(w, http.StatusUnauthorized)
+// authorizeHTTP applies git http-backend's service policy to r and renders
+// the refusal when service may not be used. A service that is not disabled
+// is authorized by Authorize. upload-pack is then served, and receive-pack
+// and upload-archive are served only when enabled or authorized, the way
+// http-backend serves them only when enabled or REMOTE_USER is set.
+func (b *Backend) authorizeHTTP(w http.ResponseWriter, r *http.Request, service string) bool {
+	var state ServiceState
+	switch service {
+	case transport.UploadPackService:
+		state = b.UploadPack
+	case transport.ReceivePackService:
+		state = b.ReceivePack
+	case transport.UploadArchiveService:
+		state = b.UploadArchive
+	}
+
+	if state == ServiceDisabled {
+		b.logf("service not enabled: %q", service)
+		renderStatusError(w, http.StatusForbidden)
+		return false
+	}
+
+	authorized := false
+	if b.Authorize != nil {
+		err := b.Authorize(r, service)
+		switch {
+		case err == nil:
+			authorized = true
+		case errors.Is(err, ErrUnauthorized):
+			b.logf("unauthorized request for %q: %v", service, err)
+			w.Header().Set("WWW-Authenticate", authChallenge)
+			renderStatusError(w, http.StatusUnauthorized)
+			return false
+		case errors.Is(err, ErrForbidden):
+			b.logf("forbidden request for %q: %v", service, err)
+			renderStatusError(w, http.StatusForbidden)
+			return false
+		default:
+			b.logf("error authorizing request for %q: %v", service, err)
+			renderStatusError(w, http.StatusInternalServerError)
+			return false
+		}
+	}
+
+	if state == ServiceDefault && service != transport.UploadPackService && !authorized {
+		b.logf("service not enabled: %q", service)
+		renderStatusError(w, http.StatusForbidden)
 		return false
 	}
 	return true

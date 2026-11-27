@@ -19,6 +19,8 @@ import (
 	"time"
 
 	"github.com/go-git/go-git/v6/backend"
+	"github.com/go-git/go-git/v6/internal/transport/loader"
+	"github.com/go-git/go-git/v6/plumbing/format/pktline"
 	"github.com/go-git/go-git/v6/plumbing/protocol/packp"
 	"github.com/go-git/go-git/v6/plumbing/transport"
 	"github.com/go-git/go-git/v6/utils/ioutil"
@@ -31,7 +33,7 @@ var errAlreadyStarted = errors.New("git: server already started")
 // Server is a git:// protocol server.
 type Server struct {
 	// Loader resolves repository URLs to storage. If nil,
-	// [transport.DefaultLoader] is used.
+	// [loader.Default] is used.
 	Loader transport.Loader
 
 	// ErrorLog is used to log errors. If nil, errors are not logged.
@@ -59,6 +61,11 @@ type Server struct {
 	// --max-connections. Connections beyond the limit are immediately
 	// closed.
 	MaxConnections int
+
+	// DisableReceivePack refuses git-receive-pack, the way git daemon
+	// does unless run with --enable=receive-pack. The server enables it
+	// by default because it backs tests that push over git://.
+	DisableReceivePack bool
 
 	ln  net.Listener
 	srv *backend.Backend
@@ -90,15 +97,26 @@ func (s *Server) Start() (string, error) {
 	}
 
 	if s.Loader == nil {
-		s.Loader = transport.DefaultLoader
+		s.Loader = loader.Default()
 	}
+
+	srv, err := backend.New(s.Loader)
+	if err != nil {
+		return "", fmt.Errorf("git: %w", err)
+	}
+	// The server backs tests that push and archive over git://, like a
+	// git daemon run with --enable=receive-pack --enable=upload-archive.
+	if !s.DisableReceivePack {
+		srv.ReceivePack = backend.ServiceEnabled
+	}
+	srv.UploadArchive = backend.ServiceEnabled
 
 	ln, err := net.Listen("tcp", defaultAddr)
 	if err != nil {
 		return "", fmt.Errorf("git: listen: %w", err)
 	}
 
-	s.srv = backend.New(s.Loader)
+	s.srv = srv
 	s.conns = make(map[net.Conn]context.CancelFunc)
 	s.done = make(chan struct{})
 	s.ln = ln
@@ -269,6 +287,18 @@ func (s *Server) handleConn(ctx context.Context, conn net.Conn) {
 
 	if err := s.srv.Serve(ctx, io.NopCloser(br), ioutil.WriteNopCloser(sc), req); err != nil {
 		s.logf("git: serve %s %s: %v", req.Service, req.URL.Path, err)
+		if errors.Is(err, backend.ErrServiceNotEnabled) {
+			s.writeDenied(sc, req.URL.Path)
+		}
+	}
+}
+
+// writeDenied tells the client that dir may not be served, with the
+// message git daemon sends when it runs without --informative-errors
+// (daemon.c daemon_error).
+func (s *Server) writeDenied(w io.Writer, dir string) {
+	if _, err := pktline.Writef(w, "ERR access denied or repository not exported: %s", dir); err != nil {
+		s.logf("git: write error response: %v", err)
 	}
 }
 
