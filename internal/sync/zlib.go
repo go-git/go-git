@@ -17,7 +17,7 @@ type ZlibReader = plugin.ZlibReader
 // ZlibWriter is an alias of plugin.ZlibWriter.
 type ZlibWriter = plugin.ZlibWriter
 
-var errNilZlibReader = errors.New("utils/sync: zlib reader source is nil")
+var errNilZlibReader = errors.New("internal/sync: zlib reader source is nil")
 
 var (
 	zlibInitBytes = []byte{0x78, 0x9c, 0x01, 0x00, 0x00, 0xff, 0xff, 0x00, 0x00, 0x00, 0x01}

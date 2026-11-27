@@ -8,7 +8,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	gogitsync "github.com/go-git/go-git/v6/utils/sync"
+	gogitsync "github.com/go-git/go-git/v6/internal/sync"
 	"github.com/go-git/go-git/v6/x/plugin"
 	xpluginzlib "github.com/go-git/go-git/v6/x/plugin/zlib"
 )
