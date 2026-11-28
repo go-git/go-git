@@ -203,6 +203,28 @@ func TestArchiveRemoteIntegration(t *testing.T) {
 				assert.Equal(t, []string{".gitignore"}, names)
 			},
 		},
+		{
+			name: "tar with exclude path filter",
+			opts: &ArchiveOptions{Format: "tar", Treeish: "master", ExcludePaths: []string{"vendor"}},
+			wantCheck: func(t *testing.T, data []byte) {
+				tr := tar.NewReader(bytes.NewReader(data))
+				var names []string
+				for {
+					hdr, err := tr.Next()
+					if err == io.EOF {
+						break
+					}
+					require.NoError(t, err)
+					if hdr.Typeflag != tar.TypeXGlobalHeader {
+						names = append(names, hdr.Name)
+					}
+				}
+				assert.Contains(t, names, "go/example.go")
+				for _, name := range names {
+					assert.False(t, strings.HasPrefix(name, "vendor/"), "unexpected excluded entry %q", name)
+				}
+			},
+		},
 	}
 
 	for _, tt := range tests {

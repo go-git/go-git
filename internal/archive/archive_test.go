@@ -1,7 +1,11 @@
 package archive
 
 import (
+	"archive/tar"
+	"archive/zip"
 	"bytes"
+	"errors"
+	"io"
 	"strings"
 	"testing"
 	"time"
@@ -13,6 +17,7 @@ import (
 	"github.com/go-git/go-git/v6/plumbing"
 	"github.com/go-git/go-git/v6/plumbing/filemode"
 	"github.com/go-git/go-git/v6/plumbing/object"
+	"github.com/go-git/go-git/v6/storage"
 	"github.com/go-git/go-git/v6/storage/filesystem"
 	"github.com/go-git/go-git/v6/storage/memory"
 )
@@ -490,7 +495,7 @@ func TestWriteTarArchive_RejectsOversizedSymlinkTarget(t *testing.T) {
 	require.NoError(t, err)
 
 	var buf bytes.Buffer
-	err = WriteTarArchive(st, &buf, tree, nil, "", nil, time.Now())
+	err = WriteTarArchive(st, &buf, tree, nil, "", nil, nil, time.Now())
 	require.Error(t, err)
 	assert.ErrorIs(t, err, ErrSymlinkTargetTooLarge)
 	assert.Contains(t, err.Error(), "link")
@@ -546,4 +551,256 @@ func TestApplyUmaskDir(t *testing.T) {
 	t.Parallel()
 	got := ApplyUmaskDir(0o000)
 	assert.Equal(t, int64(0o775), got)
+}
+
+// buildExcludeTestTree builds the tree shape used by upstream
+// t/t6132-pathspec-exclude.sh: file, sub/file, sub/sub/file, sub2/file.
+func buildExcludeTestTree(t *testing.T, st storage.Storer) *object.Tree {
+	t.Helper()
+
+	addBlob := func(name string) plumbing.Hash {
+		obj := &plumbing.MemoryObject{}
+		obj.SetType(plumbing.BlobObject)
+		_, err := obj.Write([]byte(name + "\n"))
+		require.NoError(t, err)
+		hash, err := st.SetEncodedObject(obj)
+		require.NoError(t, err)
+		return hash
+	}
+	addTree := func(entries ...object.TreeEntry) plumbing.Hash {
+		obj := &plumbing.MemoryObject{}
+		obj.SetType(plumbing.TreeObject)
+		require.NoError(t, (&object.Tree{Entries: entries}).Encode(obj))
+		hash, err := st.SetEncodedObject(obj)
+		require.NoError(t, err)
+		return hash
+	}
+
+	subSubTree := addTree(object.TreeEntry{
+		Name: "file", Mode: filemode.Regular, Hash: addBlob("sub/sub/file"),
+	})
+	subTree := addTree(
+		object.TreeEntry{Name: "file", Mode: filemode.Regular, Hash: addBlob("sub/file")},
+		object.TreeEntry{Name: "sub", Mode: filemode.Dir, Hash: subSubTree},
+	)
+	sub2Tree := addTree(object.TreeEntry{
+		Name: "file", Mode: filemode.Regular, Hash: addBlob("sub2/file"),
+	})
+	root := addTree(
+		object.TreeEntry{Name: "file", Mode: filemode.Regular, Hash: addBlob("file")},
+		object.TreeEntry{Name: "sub", Mode: filemode.Dir, Hash: subTree},
+		object.TreeEntry{Name: "sub2", Mode: filemode.Dir, Hash: sub2Tree},
+	)
+
+	tree, err := object.GetTree(st, root)
+	require.NoError(t, err)
+	return tree
+}
+
+func tarEntryNames(t *testing.T, data []byte) []string {
+	t.Helper()
+	tr := tar.NewReader(bytes.NewReader(data))
+	var names []string
+	for {
+		hdr, err := tr.Next()
+		if errors.Is(err, io.EOF) {
+			break
+		}
+		require.NoError(t, err)
+		names = append(names, hdr.Name)
+	}
+	return names
+}
+
+func zipEntryNames(t *testing.T, data []byte) []string {
+	t.Helper()
+	zr, err := zip.NewReader(bytes.NewReader(data), int64(len(data)))
+	require.NoError(t, err)
+	names := make([]string, 0, len(zr.File))
+	for _, f := range zr.File {
+		names = append(names, f.Name)
+	}
+	return names
+}
+
+func TestWriteTarArchive_ExcludeFilter(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name     string
+		paths    []string
+		excludes []string
+		want     []string
+	}{
+		{
+			name:     "exclude subtree",
+			excludes: []string{"sub"},
+			want:     []string{"file", "sub2/", "sub2/file"},
+		},
+		{
+			name:     "exclude subtree with trailing slash",
+			excludes: []string{"sub/"},
+			want:     []string{"file", "sub2/", "sub2/file"},
+		},
+		{
+			name:     "exclude single file preserves parent dir",
+			excludes: []string{"sub/file"},
+			want:     []string{"file", "sub/", "sub/sub/", "sub/sub/file", "sub2/", "sub2/file"},
+		},
+		{
+			name:     "exclude nested file omits emptied leaf dir",
+			excludes: []string{"sub/sub/file"},
+			want:     []string{"file", "sub/", "sub/file", "sub2/", "sub2/file"},
+		},
+		{
+			name:     "positive subtree minus nested subtree preserves parent dir",
+			paths:    []string{"sub"},
+			excludes: []string{"sub/sub"},
+			want:     []string{"sub/", "sub/file"},
+		},
+		{
+			name:     "single-level glob keeps deeper file and parent dirs",
+			excludes: []string{"sub/*"},
+			want:     []string{"file", "sub/", "sub/sub/", "sub/sub/file", "sub2/", "sub2/file"},
+		},
+		{
+			name:     "glob matching leaf file omits emptied dir",
+			excludes: []string{"sub/*/file"},
+			want:     []string{"file", "sub/", "sub/file", "sub2/", "sub2/file"},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			st := memory.NewStorage()
+			tree := buildExcludeTestTree(t, st)
+
+			var buf bytes.Buffer
+			require.NoError(t, WriteTarArchive(st, &buf, tree, nil, "", tt.paths, tt.excludes, time.Time{}))
+			assert.Equal(t, tt.want, tarEntryNames(t, buf.Bytes()))
+		})
+	}
+}
+
+func TestWriteZipArchive_ExcludeFilter(t *testing.T) {
+	t.Parallel()
+
+	st := memory.NewStorage()
+	tree := buildExcludeTestTree(t, st)
+
+	var buf bytes.Buffer
+	require.NoError(t, WriteZipArchive(st, &buf, tree, nil, "", nil, []string{"sub"}, time.Time{}))
+
+	names := zipEntryNames(t, buf.Bytes())
+	assert.ElementsMatch(t, []string{"file", "sub2/file"}, names)
+}
+
+func TestWriteArchive_ExcludeCombinedWithPositiveFilter(t *testing.T) {
+	t.Parallel()
+
+	st := memory.NewStorage()
+	tree := buildExcludeTestTree(t, st)
+
+	// `git archive -- sub ':(exclude)sub/sub'`: only sub/ and sub/file survive
+	// inside the positive subtree.
+	var tarBuf bytes.Buffer
+	require.NoError(t, WriteTarArchive(
+		st, &tarBuf, tree, nil, "",
+		[]string{"sub"}, []string{"sub/sub"}, time.Time{},
+	))
+	assert.Equal(t, []string{"sub/", "sub/file"}, tarEntryNames(t, tarBuf.Bytes()))
+
+	var zipBuf bytes.Buffer
+	require.NoError(t, WriteZipArchive(
+		st, &zipBuf, tree, nil, "",
+		[]string{"sub"}, []string{"sub/sub"}, time.Time{},
+	))
+	assert.ElementsMatch(t, []string{"sub/file"}, zipEntryNames(t, zipBuf.Bytes()))
+}
+
+func TestWriteArchive_ExcludeGlob(t *testing.T) {
+	t.Parallel()
+
+	st := memory.NewStorage()
+	tree := buildExcludeTestTree(t, st)
+
+	// A single-level glob excludes sub/sub/file but keeps sub/file,
+	// mirroring the `:(glob)sub/*/file` case in t/t6132-pathspec-exclude.sh.
+	var buf bytes.Buffer
+	require.NoError(t, WriteZipArchive(
+		st, &buf, tree, nil, "",
+		nil, []string{"sub/*/file"}, time.Time{},
+	))
+	assert.ElementsMatch(t,
+		[]string{"file", "sub/file", "sub2/file"},
+		zipEntryNames(t, buf.Bytes()),
+	)
+}
+
+func TestWriteArchive_ExcludeOnlyCanEmptyTheArchive(t *testing.T) {
+	t.Parallel()
+
+	st := memory.NewStorage()
+	tree := buildExcludeTestTree(t, st)
+
+	// Negative pathspecs alone subtract from the whole tree: excluding
+	// everything produces an empty archive, not a no-match error.
+	var tarBuf bytes.Buffer
+	require.NoError(t, WriteTarArchive(
+		st, &tarBuf, tree, nil, "",
+		nil, []string{"file", "sub", "sub2"}, time.Time{},
+	))
+	assert.Empty(t, tarEntryNames(t, tarBuf.Bytes()))
+
+	var zipBuf bytes.Buffer
+	require.NoError(t, WriteZipArchive(
+		st, &zipBuf, tree, nil, "",
+		nil, []string{"file", "sub", "sub2"}, time.Time{},
+	))
+	assert.Empty(t, zipEntryNames(t, zipBuf.Bytes()))
+}
+
+func TestWriteArchive_PositiveNoMatchStillErrors(t *testing.T) {
+	t.Parallel()
+
+	st := memory.NewStorage()
+	tree := buildExcludeTestTree(t, st)
+
+	// The no-match error stays tied to positive pathspecs even when an
+	// exclude filter is also given.
+	var tarBuf bytes.Buffer
+	err := WriteTarArchive(
+		st, &tarBuf, tree, nil, "",
+		[]string{"missing"}, []string{"sub"}, time.Time{},
+	)
+	require.ErrorIs(t, err, ErrPathspecNoMatch)
+}
+
+func TestWriteArchive_PositiveFullyExcludedIsEmptyNotError(t *testing.T) {
+	t.Parallel()
+
+	st := memory.NewStorage()
+	tree := buildExcludeTestTree(t, st)
+
+	// Matches `git archive -- sub ':(exclude)sub/...'`: the positive
+	// spec does match, but every entry it would select is excluded. Git
+	// writes an empty archive and exits successfully rather than failing
+	// with a no-match error, so the no-match flag must be evaluated before
+	// the exclude filter removes the last entry.
+	excludes := []string{"sub/file", "sub/sub"}
+
+	var tarBuf bytes.Buffer
+	require.NoError(t, WriteTarArchive(
+		st, &tarBuf, tree, nil, "",
+		[]string{"sub"}, excludes, time.Time{},
+	))
+	assert.Empty(t, tarEntryNames(t, tarBuf.Bytes()))
+
+	var zipBuf bytes.Buffer
+	require.NoError(t, WriteZipArchive(
+		st, &zipBuf, tree, nil, "",
+		[]string{"sub"}, excludes, time.Time{},
+	))
+	assert.Empty(t, zipEntryNames(t, zipBuf.Bytes()))
 }
