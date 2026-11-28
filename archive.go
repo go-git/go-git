@@ -55,9 +55,12 @@ func ArchiveRemoteContext(ctx context.Context, url string, o *ArchiveOptions) (i
 		args = append(args, "--prefix="+o.Prefix)
 	}
 	args = append(args, o.Treeish)
-	if len(o.Paths) > 0 {
+	if len(o.Paths) > 0 || len(o.ExcludePaths) > 0 {
 		args = append(args, "--")
 		args = append(args, o.Paths...)
+		for _, p := range o.ExcludePaths {
+			args = append(args, ":(exclude)"+p)
+		}
 	}
 
 	return arch.Archive(ctx, &transport.ArchiveRequest{

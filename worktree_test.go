@@ -4744,6 +4744,99 @@ func (s *WorktreeSuite) TestGrep() {
 					TreeName:   "6ecf0ef2c2dffb796033e5a02219af86ec6584e5",
 				},
 			},
+		}, {
+			name: "exclude pathspec subtracts from the whole tree",
+			options: GrepOptions{
+				Patterns:         []*regexp.Regexp{regexp.MustCompile("import")},
+				ExcludePathSpecs: []*regexp.Regexp{regexp.MustCompile("vendor/")},
+			},
+			wantResult: []GrepResult{
+				{
+					FileName:   "go/example.go",
+					LineNumber: 3,
+					Content:    "import (",
+					TreeName:   "6ecf0ef2c2dffb796033e5a02219af86ec6584e5",
+				},
+			},
+			dontWantResult: []GrepResult{
+				{
+					FileName:   "vendor/foo.go",
+					LineNumber: 3,
+					Content:    "import \"fmt\"",
+					TreeName:   "6ecf0ef2c2dffb796033e5a02219af86ec6584e5",
+				},
+			},
+		}, {
+			name: "positive pathspec combined with an exclude pathspec",
+			options: GrepOptions{
+				Patterns: []*regexp.Regexp{regexp.MustCompile("import")},
+				PathSpecs: []*regexp.Regexp{
+					regexp.MustCompile("go/"),
+					regexp.MustCompile("vendor/"),
+				},
+				ExcludePathSpecs: []*regexp.Regexp{regexp.MustCompile("vendor/")},
+			},
+			wantResult: []GrepResult{
+				{
+					FileName:   "go/example.go",
+					LineNumber: 3,
+					Content:    "import (",
+					TreeName:   "6ecf0ef2c2dffb796033e5a02219af86ec6584e5",
+				},
+			},
+			dontWantResult: []GrepResult{
+				{
+					FileName:   "vendor/foo.go",
+					LineNumber: 3,
+					Content:    "import \"fmt\"",
+					TreeName:   "6ecf0ef2c2dffb796033e5a02219af86ec6584e5",
+				},
+			},
+		}, {
+			name: "multiple exclude pathspecs compose",
+			options: GrepOptions{
+				Patterns: []*regexp.Regexp{regexp.MustCompile("import")},
+				ExcludePathSpecs: []*regexp.Regexp{
+					regexp.MustCompile("go/"),
+					regexp.MustCompile("vendor/"),
+				},
+			},
+			dontWantResult: []GrepResult{
+				{
+					FileName:   "go/example.go",
+					LineNumber: 3,
+					Content:    "import (",
+					TreeName:   "6ecf0ef2c2dffb796033e5a02219af86ec6584e5",
+				},
+				{
+					FileName:   "vendor/foo.go",
+					LineNumber: 3,
+					Content:    "import \"fmt\"",
+					TreeName:   "6ecf0ef2c2dffb796033e5a02219af86ec6584e5",
+				},
+			},
+		}, {
+			name: "nil exclude pathspec is ignored",
+			options: GrepOptions{
+				Patterns:         []*regexp.Regexp{regexp.MustCompile("import")},
+				ExcludePathSpecs: []*regexp.Regexp{nil, regexp.MustCompile("vendor/")},
+			},
+			wantResult: []GrepResult{
+				{
+					FileName:   "go/example.go",
+					LineNumber: 3,
+					Content:    "import (",
+					TreeName:   "6ecf0ef2c2dffb796033e5a02219af86ec6584e5",
+				},
+			},
+			dontWantResult: []GrepResult{
+				{
+					FileName:   "vendor/foo.go",
+					LineNumber: 3,
+					Content:    "import \"fmt\"",
+					TreeName:   "6ecf0ef2c2dffb796033e5a02219af86ec6584e5",
+				},
+			},
 		},
 	}
 

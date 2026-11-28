@@ -530,6 +530,16 @@ type LogOptions struct {
 	// either <path> is a file path, or directory path, or a regexp of file/directory path
 	PathFilter func(string) bool
 
+	// ExcludePathFilter selects commits based on the path of files that are
+	// updated, taking the file path as argument and returning true when the
+	// path must be excluded. It is the negative counterpart of PathFilter,
+	// equivalent to the `:(exclude)` / `:!` pathspec magic in
+	// `git log -- <path> ':(exclude)<excluded-path>'`. A change is kept when
+	// every positive filter (FileName and PathFilter) accepts it and no
+	// exclude filter does. When no positive filter is set, the exclude
+	// filter subtracts from the whole tree.
+	ExcludePathFilter func(string) bool
+
 	// Pretend as if all the refs in refs/, along with HEAD, are listed on the command line as <commit>.
 	// It is equivalent to running `git log --all`.
 	// If set on true, the From option will be ignored.
@@ -789,6 +799,14 @@ type GrepOptions struct {
 	ReferenceName plumbing.ReferenceName
 	// PathSpecs are compiled Regexp objects of pathspec to use in the matching.
 	PathSpecs []*regexp.Regexp
+	// ExcludePathSpecs are compiled Regexp objects of pathspecs to exclude
+	// from the matching. They are the negative counterpart of PathSpecs,
+	// equivalent to the `:(exclude)` / `:!` pathspec magic in
+	// `git grep <pattern> -- <path> ':(exclude)<excluded-path>'`. A file is
+	// searched when it matches a positive PathSpec, if any are given, and
+	// matches no ExcludePathSpec. With excludes only, they subtract from
+	// the whole tree.
+	ExcludePathSpecs []*regexp.Regexp
 }
 
 // ErrHashOrReference is returned when both CommitHash and ReferenceName are specified.

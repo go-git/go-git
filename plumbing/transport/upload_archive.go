@@ -139,11 +139,40 @@ func UploadArchive(
 		return muxError(mux, w, err)
 	}
 
-	if err = archive.WriteArchive(st, mux, tree, commitHash, commitTime, format, prefix, paths); err != nil {
+	includePaths, excludePaths, err := splitArchivePathspecs(paths)
+	if err != nil {
+		return muxError(mux, w, err)
+	}
+
+	if err = archive.WriteArchive(st, mux, tree, commitHash, commitTime, format, prefix, includePaths, excludePaths); err != nil {
 		return muxError(mux, w, err)
 	}
 
 	return pktline.WriteFlush(w)
+}
+
+func splitArchivePathspecs(paths []string) (include, exclude []string, err error) {
+	for _, p := range paths {
+		var pattern string
+		var isExclude bool
+		switch {
+		case strings.HasPrefix(p, ":(exclude)"):
+			pattern, isExclude = strings.TrimPrefix(p, ":(exclude)"), true
+		case strings.HasPrefix(p, ":!"):
+			pattern, isExclude = strings.TrimPrefix(p, ":!"), true
+		case strings.HasPrefix(p, ":^"):
+			pattern, isExclude = strings.TrimPrefix(p, ":^"), true
+		}
+		if isExclude {
+			if pattern == "" {
+				return nil, nil, fmt.Errorf("%w: '%s'", archive.ErrPathspecNoMatch, p)
+			}
+			exclude = append(exclude, pattern)
+		} else {
+			include = append(include, p)
+		}
+	}
+	return include, exclude, nil
 }
 
 const maxArchiveArgs = 64

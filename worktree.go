@@ -1710,6 +1710,14 @@ func findMatchInFiles(fileiter *object.FileIter, treeName string, opts *GrepOpti
 			return nil
 		}
 
+		// Skip files matched by an exclude pathspec, the negative
+		// counterpart of PathSpecs.
+		for _, excludePathSpec := range opts.ExcludePathSpecs {
+			if excludePathSpec != nil && excludePathSpec.MatchString(file.Name) {
+				return nil
+			}
+		}
+
 		grepResults, err := findMatchInFile(file, treeName, opts)
 		if err != nil {
 			return err

@@ -200,7 +200,7 @@ func ResolveRef(st storage.Storer, name string, allowHash bool) (plumbing.Hash, 
 }
 
 // WriteTarArchive writes a tar archive from a tree.
-func WriteTarArchive(st storage.Storer, w io.Writer, tree *object.Tree, commitHash *plumbing.Hash, prefix string, pathFilter []string, modTime time.Time) error {
+func WriteTarArchive(st storage.Storer, w io.Writer, tree *object.Tree, commitHash *plumbing.Hash, prefix string, pathFilter, excludeFilter []string, modTime time.Time) error {
 	tw := tar.NewWriter(w)
 
 	// Write PAX global extended header with commit ID if available.
@@ -233,6 +233,17 @@ func WriteTarArchive(st storage.Storer, w io.Writer, tree *object.Tree, commitHa
 	walker := object.NewTreeWalker(tree, true, nil)
 	defer walker.Close()
 
+	type pendingDir struct {
+		name string
+		mode int64
+	}
+	var pendingDirs []pendingDir
+	trimPending := func(entryName string) {
+		for len(pendingDirs) > 0 && !strings.HasPrefix(entryName, pendingDirs[len(pendingDirs)-1].name+"/") {
+			pendingDirs = pendingDirs[:len(pendingDirs)-1]
+		}
+	}
+
 	var matchedAny bool
 	for {
 		name, entry, err := walker.Next()
@@ -243,17 +254,45 @@ func WriteTarArchive(st storage.Storer, w io.Writer, tree *object.Tree, commitHa
 			return err
 		}
 
-		if len(pathFilter) > 0 && !MatchesPathFilter(name, pathFilter) {
-			continue
+		if len(pathFilter) > 0 {
+			if !MatchesPathFilter(name, pathFilter) {
+				continue
+			}
+			matchedAny = true
 		}
-		matchedAny = true
-
-		fullName := prefix + name
 
 		// Extract Unix permission bits from git mode.
 		unixMode := int64(entry.Mode) & 0o777
 
-		if entry.Mode == filemode.Dir || entry.Mode == filemode.Submodule {
+		// Defer directory headers until a surviving descendant is written so
+		// directories emptied by excludeFilter are omitted while parent
+		// directories of surviving entries are preserved, matching git archive.
+		if entry.Mode == filemode.Dir {
+			trimPending(name)
+			pendingDirs = append(pendingDirs, pendingDir{name: name, mode: unixMode})
+			continue
+		}
+
+		if len(excludeFilter) > 0 && matchesExcludeFilter(name, excludeFilter) {
+			continue
+		}
+
+		trimPending(name)
+		for _, dir := range pendingDirs {
+			if err := tw.WriteHeader(&tar.Header{
+				Typeflag: tar.TypeDir,
+				Name:     prefix + dir.name + "/",
+				Mode:     ApplyUmaskDir(dir.mode),
+				ModTime:  modTime,
+			}); err != nil {
+				return err
+			}
+		}
+		pendingDirs = pendingDirs[:0]
+
+		fullName := prefix + name
+
+		if entry.Mode == filemode.Submodule {
 			if err := tw.WriteHeader(&tar.Header{
 				Typeflag: tar.TypeDir,
 				Name:     fullName + "/",
@@ -333,7 +372,7 @@ func WriteTarArchive(st storage.Storer, w io.Writer, tree *object.Tree, commitHa
 }
 
 // WriteZipArchive writes a zip archive from a tree.
-func WriteZipArchive(st storage.Storer, w io.Writer, tree *object.Tree, commitHash *plumbing.Hash, prefix string, pathFilter []string, modTime time.Time) error {
+func WriteZipArchive(st storage.Storer, w io.Writer, tree *object.Tree, commitHash *plumbing.Hash, prefix string, pathFilter, excludeFilter []string, modTime time.Time) error {
 	zw := zip.NewWriter(w)
 
 	walker := object.NewTreeWalker(tree, true, nil)
@@ -349,12 +388,18 @@ func WriteZipArchive(st storage.Storer, w io.Writer, tree *object.Tree, commitHa
 			return err
 		}
 
-		if len(pathFilter) > 0 && !MatchesPathFilter(name, pathFilter) {
-			continue
+		if len(pathFilter) > 0 {
+			if !MatchesPathFilter(name, pathFilter) {
+				continue
+			}
+			matchedAny = true
 		}
-		matchedAny = true
 
 		if entry.Mode == filemode.Dir || entry.Mode == filemode.Submodule {
+			continue
+		}
+
+		if len(excludeFilter) > 0 && matchesExcludeFilter(name, excludeFilter) {
 			continue
 		}
 
@@ -441,6 +486,26 @@ func MatchesPathFilter(name string, filters []string) bool {
 	return false
 }
 
+// matchesExcludeFilter checks whether name is excluded by any of the negative
+// path filters. Unlike MatchesPathFilter, it does not match parent directories
+// of a filter so excluding a file or subdirectory preserves its parent
+// directory when sibling entries survive.
+func matchesExcludeFilter(name string, filters []string) bool {
+	for _, f := range filters {
+		f = strings.TrimRight(f, "/")
+		if f == "" {
+			continue
+		}
+		if name == f || strings.HasPrefix(name, f+"/") {
+			return true
+		}
+		if matched, _ := path.Match(f, name); matched {
+			return true
+		}
+	}
+	return false
+}
+
 // GetTarCommitID extracts the commit ID from a git-generated tar archive.
 // It reads the PAX global extended header from the beginning of the archive
 // and returns the value of the "comment" field, which contains the commit hash.
@@ -470,22 +535,24 @@ func GetTarCommitID(r io.Reader) (*plumbing.Hash, error) {
 // Supported formats: tar, zip, tar.gz, tgz.
 // The prefix is prepended to all file paths in the archive.
 // The paths slice can be used to filter which files are included.
-func WriteArchive(st storage.Storer, w io.Writer, tree *object.Tree, commitHash *plumbing.Hash, commitTime time.Time, format, prefix string, paths []string) error {
+// The excludePaths slice removes matched paths, the negative counterpart of
+// paths, equivalent to the `:(exclude)` / `:!` pathspec magic.
+func WriteArchive(st storage.Storer, w io.Writer, tree *object.Tree, commitHash *plumbing.Hash, commitTime time.Time, format, prefix string, paths, excludePaths []string) error {
 	if HasInvalidPrefix(prefix) {
 		return fmt.Errorf("%w: %s", ErrInvalidPrefix, prefix)
 	}
 
 	switch format {
 	case "tar":
-		return WriteTarArchive(st, w, tree, commitHash, prefix, paths, commitTime)
+		return WriteTarArchive(st, w, tree, commitHash, prefix, paths, excludePaths, commitTime)
 	case "tar.gz", "tgz":
 		gw := gzip.NewWriter(w)
-		if err := WriteTarArchive(st, gw, tree, commitHash, prefix, paths, commitTime); err != nil {
+		if err := WriteTarArchive(st, gw, tree, commitHash, prefix, paths, excludePaths, commitTime); err != nil {
 			return err
 		}
 		return gw.Close()
 	case "zip":
-		return WriteZipArchive(st, w, tree, commitHash, prefix, paths, commitTime)
+		return WriteZipArchive(st, w, tree, commitHash, prefix, paths, excludePaths, commitTime)
 	default:
 		return fmt.Errorf("%w: %s", ErrUnsupportedFormat, format)
 	}

@@ -1501,6 +1501,11 @@ type ArchiveOptions struct {
 	// Paths is an optional list of paths to include in the archive.
 	// If empty, all paths are included.
 	Paths []string
+	// ExcludePaths is an optional list of paths to leave out of the
+	// archive, the negative counterpart of Paths. It follows the same
+	// prefix and glob matching rules and is equivalent to the
+	// `:(exclude)` / `:!` pathspec magic of `git archive`.
+	ExcludePaths []string
 	// ClientOptions are options for the transport client (used by ArchiveRemote).
 	ClientOptions []client.Option
 	// Progress receives human-readable status from the remote server.
@@ -1555,11 +1560,12 @@ func (r *Repository) ArchiveContext(ctx context.Context, o *ArchiveOptions) (io.
 
 	prefix := o.Prefix
 	paths := slices.Clone(o.Paths)
+	excludePaths := slices.Clone(o.ExcludePaths)
 
 	pr, pw := io.Pipe()
 	cw := ioutil.NewContextWriter(ctx, pw)
 	go func() {
-		err := archive.WriteArchive(r.Storer, cw, tree, commitHash, commitTime, format, prefix, paths)
+		err := archive.WriteArchive(r.Storer, cw, tree, commitHash, commitTime, format, prefix, paths, excludePaths)
 		_ = pw.CloseWithError(err)
 	}()
 
@@ -1589,10 +1595,18 @@ func (r *Repository) Log(o *LogOptions) (object.CommitIter, error) {
 
 	if o.FileName != nil {
 		// for `git log --all` also check parent (if the next commit comes from the real parent)
-		it = r.logWithFile(*o.FileName, it, o.All)
+		fileName := *o.FileName
+		if o.ExcludePathFilter != nil {
+			exclude := o.ExcludePathFilter
+			it = r.logWithPathFilter(func(path string) bool {
+				return path == fileName && !exclude(path)
+			}, it, o.All)
+		} else {
+			it = r.logWithFile(fileName, it, o.All)
+		}
 	}
-	if o.PathFilter != nil {
-		it = r.logWithPathFilter(o.PathFilter, it, o.All)
+	if pathFilter := logPathFilter(o); pathFilter != nil {
+		it = r.logWithPathFilter(pathFilter, it, o.All)
 	}
 
 	if o.Since != nil || o.Until != nil || !o.To.IsZero() {
@@ -1623,6 +1637,32 @@ func (r *Repository) log(from plumbing.Hash, commitIterFunc func(*object.Commit)
 
 func (r *Repository) logAll(commitIterFunc func(*object.Commit) object.CommitIter) (object.CommitIter, error) {
 	return object.NewCommitAllIter(r.Storer, commitIterFunc)
+}
+
+// logPathFilter combines the positive PathFilter with the negative
+// ExcludePathFilter into one predicate, so the two do not cost an extra
+// tree diff per commit pair. A path passes when the positive filter, when
+// set, accepts it and the exclude filter does not. With only an exclude
+// filter set, it subtracts from the whole tree, mirroring git pathspec
+// semantics for `:(exclude)`.
+func logPathFilter(o *LogOptions) func(string) bool {
+	switch {
+	case o.PathFilter != nil && o.ExcludePathFilter != nil:
+		positive := o.PathFilter
+		exclude := o.ExcludePathFilter
+		return func(path string) bool {
+			return positive(path) && !exclude(path)
+		}
+	case o.PathFilter != nil:
+		return o.PathFilter
+	case o.ExcludePathFilter != nil && o.FileName == nil:
+		exclude := o.ExcludePathFilter
+		return func(path string) bool {
+			return !exclude(path)
+		}
+	default:
+		return nil
+	}
 }
 
 func (*Repository) logWithFile(fileName string, commitIter object.CommitIter, checkParent bool) object.CommitIter {

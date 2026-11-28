@@ -3062,6 +3062,110 @@ func (s *RepositorySuite) TestLogPathFilterRegexp() {
 	)
 }
 
+func (s *RepositorySuite) TestLogExcludePathFilter() {
+	r, err := Init(memory.NewStorage(), WithWorkTree(memfs.New()))
+	s.NoError(err)
+	defer func() { _ = r.Close() }()
+
+	w, err := r.Worktree()
+	s.NoError(err)
+
+	sig := defaultSignature()
+	commit := func(msg string, paths ...string) plumbing.Hash {
+		for _, path := range paths {
+			s.NoError(util.WriteFile(w.Filesystem(), path, []byte(msg+"\n"), 0o644))
+			_, err := w.Add(path)
+			s.NoError(err)
+		}
+		hash, err := w.Commit(msg, &CommitOptions{Author: sig, Committer: sig})
+		s.NoError(err)
+		return hash
+	}
+
+	// Tree layout mirrors upstream t/t6132-pathspec-exclude.sh:
+	// file, sub/file, sub/sub/file, sub2/file.
+	c1 := commit("initial", "file", "sub/file", "sub/sub/file", "sub2/file")
+	c2 := commit("deep change", "sub/sub/file")
+	c3 := commit("root change", "file")
+	c4 := commit("mixed change", "sub/file", "sub2/file")
+
+	logHashes := func(opts *LogOptions) []plumbing.Hash {
+		iter, err := r.Log(opts)
+		s.NoError(err)
+		defer iter.Close()
+
+		var hashes []plumbing.Hash
+		s.NoError(iter.ForEach(func(commit *object.Commit) error {
+			hashes = append(hashes, commit.Hash)
+			return nil
+		}))
+		return hashes
+	}
+
+	under := func(dir string) func(string) bool {
+		return func(path string) bool {
+			return strings.HasPrefix(path, dir+"/")
+		}
+	}
+
+	// Exclude-only, the equivalent of `git log -- . ':(exclude)sub'`.
+	// C2 only touches the excluded subtree and disappears; C4 still
+	// changes sub2/file and C1 changes paths outside the subtree.
+	excludeOnly := logHashes(&LogOptions{
+		ExcludePathFilter: under("sub"),
+	})
+	s.Equal([]plumbing.Hash{c4, c3, c1}, excludeOnly)
+	s.NotContains(excludeOnly, c2)
+
+	// Positive plus negative filter, the equivalent of
+	// `git log -- sub ':(exclude)sub/sub'`.
+	s.Equal([]plumbing.Hash{c4, c1}, logHashes(&LogOptions{
+		PathFilter:        under("sub"),
+		ExcludePathFilter: under("sub/sub"),
+	}))
+
+	// FileName behaves as a positive pathspec combined with the exclude.
+	fileName := "sub/file"
+	s.Equal([]plumbing.Hash{c4, c1}, logHashes(&LogOptions{
+		FileName:          &fileName,
+		ExcludePathFilter: under("sub/sub"),
+	}))
+
+	// Excluding the file (or its parent subtree) cancels FileName, matching
+	// `git log -- sub/file ':(exclude)sub/file'` and `':(exclude)sub'`.
+	s.Empty(logHashes(&LogOptions{
+		FileName: &fileName,
+		ExcludePathFilter: func(path string) bool {
+			return path == fileName
+		},
+	}))
+	s.Empty(logHashes(&LogOptions{
+		FileName:          &fileName,
+		ExcludePathFilter: under("sub"),
+	}))
+
+	// Excluding every path yields an empty history without an error.
+	s.Empty(logHashes(&LogOptions{
+		ExcludePathFilter: func(string) bool { return true },
+	}))
+
+	// A positive spec and an exclude spec naming the same path cancel out,
+	// matching `git log -- sub/file ':(exclude)sub/file'` which is empty.
+	s.Empty(logHashes(&LogOptions{
+		PathFilter: func(path string) bool { return path == fileName },
+		ExcludePathFilter: func(path string) bool {
+			return path == fileName
+		},
+	}))
+
+	// Excluding the whole subtree a positive filter is scoped to also
+	// yields nothing, matching `git log -- sub ':(exclude)sub'`.
+	s.Empty(logHashes(&LogOptions{
+		PathFilter:        under("sub"),
+		ExcludePathFilter: under("sub"),
+	}))
+}
+
 func (s *RepositorySuite) TestLogLimitNext() {
 	r, _ := Init(memory.NewStorage())
 	defer func() { _ = r.Close() }()
@@ -4627,6 +4731,28 @@ func TestRepository_Archive(t *testing.T) {
 			name:      "tar with path filter",
 			opts:      ArchiveOptions{Format: "tar", Treeish: "master", Paths: []string{".gitignore"}},
 			wantFiles: true,
+		},
+		{
+			name: "tar with exclude path filter",
+			opts: ArchiveOptions{Format: "tar", Treeish: "master", ExcludePaths: []string{"vendor"}},
+			wantCheck: func(t *testing.T, data []byte) {
+				tr := tar.NewReader(bytes.NewReader(data))
+				var names []string
+				for {
+					hdr, err := tr.Next()
+					if err == io.EOF {
+						break
+					}
+					require.NoError(t, err)
+					if hdr.Typeflag != tar.TypeXGlobalHeader {
+						names = append(names, hdr.Name)
+					}
+				}
+				assert.Contains(t, names, "go/example.go")
+				for _, name := range names {
+					assert.False(t, strings.HasPrefix(name, "vendor/"), "unexpected excluded entry %q", name)
+				}
+			},
 		},
 		{
 			name:      "tar from tag",
