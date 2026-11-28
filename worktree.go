@@ -163,7 +163,7 @@ func (w *Worktree) PullContext(ctx context.Context, o *PullOptions) error {
 	if err := w.reset(&ResetOptions{
 		Mode:   MergeReset,
 		Commit: ref.Hash(),
-	}); err != nil {
+	}, false); err != nil {
 		return err
 	}
 
@@ -227,7 +227,7 @@ func (w *Worktree) Checkout(opts *CheckoutOptions) error {
 		ro.Mode = SoftReset
 	}
 
-	if err := w.reset(ro); err != nil {
+	if err := w.reset(ro, false); err != nil {
 		return err
 	}
 
@@ -347,7 +347,10 @@ func (w *Worktree) setHEADToBranch(branch plumbing.ReferenceName, commit plumbin
 
 // Reset the worktree to a specified state.
 func (w *Worktree) Reset(opts *ResetOptions) error {
-	if err := w.reset(opts); err != nil {
+	// Git parses the whole target of `reset --hard` and `reset --keep`, but
+	// not that of a path-limited restore.
+	parseTarget := opts.Mode == KeepReset || (opts.Mode == HardReset && len(opts.Files) == 0)
+	if err := w.reset(opts, parseTarget); err != nil {
 		return err
 	}
 	return w.setHEADCommit(opts.Commit)
@@ -355,7 +358,12 @@ func (w *Worktree) Reset(opts *ResetOptions) error {
 
 // reset updates the index and worktree without changing references. Checkout
 // switches HEAD afterward; Reset and Pull move the current branch afterward.
-func (w *Worktree) reset(opts *ResetOptions) error {
+//
+// parseTarget makes a hard or keep reset read every tree of the target before
+// it changes anything, as `git reset` does to rebuild its cache-tree. Git's
+// checkout and restore skip a subtree that the index's cache-tree vouches
+// for, so they pass false.
+func (w *Worktree) reset(opts *ResetOptions, parseTarget bool) error {
 	if trace.Performance.Enabled() {
 		start := time.Now()
 		defer func() {
@@ -398,6 +406,21 @@ func (w *Worktree) reset(opts *ResetOptions) error {
 		}
 	}
 
+	if parseTarget {
+		walker := object.NewTreeWalker(t, true, nil)
+		for {
+			_, _, err := walker.Next()
+			if errors.Is(err, io.EOF) {
+				break
+			}
+			if err != nil {
+				walker.Close()
+				return err
+			}
+		}
+		walker.Close()
+	}
+
 	var trackedChanges merkletrie.Changes
 	if opts.Mode == HardReset {
 		// The index identifies tracked paths even when the old HEAD tree is
@@ -438,7 +461,7 @@ func (w *Worktree) reset(opts *ResetOptions) error {
 			return err
 		}
 		if len(changedFiles) == 0 {
-			return w.r.Storer.SetIndex(idx)
+			return w.storeIndex(idx)
 		}
 		return w.resetWorktree(cfg, t, idx, changedFiles)
 	}
@@ -460,6 +483,11 @@ func (w *Worktree) reset(opts *ResetOptions) error {
 	idx, _, err := w.buildResetIndex(t, opts.SparseDirs, opts.Files, stagingChanges)
 	if err != nil {
 		return err
+	}
+	if parseTarget && opts.Mode == HardReset {
+		// The whole target was read above, so every tree of it exists and the
+		// index, now the target, can record them in its cache-tree.
+		idx.FillCache(t.Hash)
 	}
 	if err := w.removeTrackedDeletions(trackedChanges, opts.Files); err != nil {
 		return err
@@ -529,7 +557,7 @@ func (w *Worktree) resetIndex(t *object.Tree, dirs, files []string, changes merk
 	if err != nil {
 		return nil, err
 	}
-	return removedFiles, w.r.Storer.SetIndex(idx)
+	return removedFiles, w.storeIndex(idx)
 }
 
 // buildResetIndex returns the index reset to t, without storing it, and the
@@ -605,10 +633,24 @@ func (w *Worktree) buildResetIndex(t *object.Tree, dirs, files []string, changes
 	return idx, removedFiles, nil
 }
 
+// storeIndex stores idx, whose entries the caller changed. A storer may keep
+// the index it is given, and a stale cache-tree would tell a later diff that
+// a changed directory is not, so every cache-tree entry that no longer
+// describes the entries is invalidated first, whether or not the caller did.
+func (w *Worktree) storeIndex(idx *index.Index) error {
+	idx.PruneCache()
+	return w.r.Storer.SetIndex(idx)
+}
+
 // copyIndex returns a copy of idx whose entries can be changed without
 // changing those of idx.
 func copyIndex(idx *index.Index) *index.Index {
 	c := *idx
+	if idx.Cache != nil {
+		// The copy is changed, after which the cache-tree has to be pruned
+		// as the one stored with it.
+		c.Cache = &index.Tree{Entries: slices.Clone(idx.Cache.Entries)}
+	}
 	c.Entries = make([]*index.Entry, len(idx.Entries))
 	for i, e := range idx.Entries {
 		ec := *e
@@ -896,7 +938,7 @@ func (w *Worktree) resetWorktreeToTree(cfg *config.Config, toTree *object.Tree, 
 	}
 
 	b.Write(idx)
-	return w.r.Storer.SetIndex(idx)
+	return w.storeIndex(idx)
 }
 
 // resetWorktree updates the worktree to match idx, the index a merge reset
@@ -960,7 +1002,7 @@ func (w *Worktree) resetWorktree(cfg *config.Config, t *object.Tree, idx *index.
 	}
 
 	b.Write(idx)
-	return w.r.Storer.SetIndex(idx)
+	return w.storeIndex(idx)
 }
 
 func (w *Worktree) checkoutChange(cfg *config.Config, fs *worktreeFilesystem, ch merkletrie.Change, t *object.Tree, idx *indexBuilder, removedMode filemode.FileMode) error {

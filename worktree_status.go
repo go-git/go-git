@@ -8,6 +8,7 @@ import (
 	"os"
 	"path"
 	"path/filepath"
+	"slices"
 	"strings"
 	"time"
 
@@ -273,7 +274,21 @@ func (w *Worktree) diffTreeWithStaging(t *object.Tree, reverse bool) (merkletrie
 		return nil, err
 	}
 
-	to := mindex.NewRootNode(idx)
+	// A directory the cache-tree records as unchanged is skipped without
+	// reading its tree, as Git does, so Status and a mixed reset work when
+	// such a tree is missing. The cache-tree of an index file is input, so
+	// it is pruned first, on a copy as the stored index may be shared, to
+	// agree with the entries; Commit does not trust it either.
+	pruned := *idx
+	if idx.Cache != nil {
+		pruned.Cache = &index.Tree{Entries: slices.Clone(idx.Cache.Entries)}
+		pruned.PruneCache()
+	}
+	idx = &pruned
+	to := mindex.NewRootNodeWithOptions(idx, mindex.RootNodeOptions{
+		UpholdExecutableBit: true,
+		CacheTree:           true,
+	})
 
 	if reverse {
 		return merkletrie.DiffTree(to, from, diffTreeIsEquals)
@@ -445,7 +460,7 @@ func (w *Worktree) doAdd(path string, ignorePattern []gitignore.Pattern, skipSta
 		return h, nil
 	}
 
-	return h, w.r.Storer.SetIndex(idx)
+	return h, w.storeIndex(idx)
 }
 
 // AddGlob adds all paths, matching pattern, to the index. If pattern matches a
@@ -508,7 +523,7 @@ func (w *Worktree) AddGlob(pattern string) error {
 	}
 
 	if saveIndex {
-		return w.r.Storer.SetIndex(idx)
+		return w.storeIndex(idx)
 	}
 
 	return nil
@@ -627,6 +642,7 @@ func (w *Worktree) addOrUpdateFileToIndex(idx *index.Index, filename string, h p
 		return w.doAddFileToIndex(idx, filename, h)
 	}
 
+	idx.InvalidateCache(filename)
 	return w.doUpdateFileToIndex(e, filename, h)
 }
 
@@ -681,7 +697,7 @@ func (w *Worktree) Remove(path string) (plumbing.Hash, error) {
 		return h, err
 	}
 
-	return h, w.r.Storer.SetIndex(idx)
+	return h, w.storeIndex(idx)
 }
 
 func (w *Worktree) doRemoveDirectory(idx *index.Index, directory string) (removed bool, err error) {
@@ -788,7 +804,7 @@ func (w *Worktree) RemoveGlob(pattern string) error {
 		}
 	}
 
-	return w.r.Storer.SetIndex(idx)
+	return w.storeIndex(idx)
 }
 
 // Move moves or rename a file in the worktree and the index, directories are
@@ -821,5 +837,5 @@ func (w *Worktree) Move(from, to string) (plumbing.Hash, error) {
 		return hash, err
 	}
 
-	return hash, w.r.Storer.SetIndex(idx)
+	return hash, w.storeIndex(idx)
 }

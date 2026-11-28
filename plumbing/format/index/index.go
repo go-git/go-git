@@ -49,7 +49,10 @@ type Index struct {
 	// Entries collection of entries represented by this Index. The order of
 	// this collection is not guaranteed
 	Entries []*Entry
-	// Cache represents the 'Cached tree' extension
+	// Cache represents the 'Cached tree' extension. Code that changes Entries
+	// must invalidate the directories it touches with InvalidateCache; a
+	// cache-tree that describes other entries than Entries must not be stored
+	// or trusted, which PruneCache enforces.
 	Cache *Tree
 	// ResolveUndo represents the 'Resolve undo' extension
 	ResolveUndo *ResolveUndo
@@ -61,6 +64,10 @@ type Index struct {
 
 // Add creates a new Entry and returns it. The caller should first check
 // that another entry with the same path does not exist.
+//
+// The cache-tree is invalidated for the path. The caller fills in the entry
+// and, if it later changes the hash or mode of an entry that already
+// exists, calls InvalidateCache itself.
 //
 // The path is validated against pathutil.ValidTreePath: the index feeds
 // future trees, so a name that the tree-side gates would reject must
@@ -75,6 +82,7 @@ func (i *Index) Add(path string) (*Entry, error) {
 		Name: filepath.ToSlash(path),
 	}
 
+	i.InvalidateCache(e.Name)
 	i.Entries = append(i.Entries, e)
 	return e, nil
 }
@@ -96,6 +104,7 @@ func (i *Index) Remove(path string) (*Entry, error) {
 	path = filepath.ToSlash(path)
 	for index, e := range i.Entries {
 		if e.Name == path {
+			i.InvalidateCache(path)
 			i.Entries = append(i.Entries[:index], i.Entries[index+1:]...)
 			return e, nil
 		}
@@ -177,7 +186,11 @@ func (e Entry) String() string {
 }
 
 // Tree contains pre-computed hashes for trees that can be derived from the
-// index. It helps speed up tree object generation from index for a new commit.
+// index (Git's cache-tree, the TREE extension). It helps speed up tree object
+// generation from index for a new commit.
+//
+// Entries lists the trees in pre-order: the root, whose Path is empty, then
+// each of its Trees subtrees with their own subtrees after them.
 type Tree struct {
 	Entries []TreeEntry
 }
@@ -187,7 +200,9 @@ type TreeEntry struct {
 	// Path component (relative to its parent directory)
 	Path string
 	// Entries is the number of entries in the index that is covered by the tree
-	// this entry represents.
+	// this entry represents. It is negative when the entry is invalidated: the
+	// index changed under this path since the tree was computed, and Hash is
+	// not set.
 	Entries int
 	// Trees is the number that represents the number of subtrees this tree has
 	Trees int

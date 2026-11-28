@@ -1,11 +1,13 @@
 package git
 
 import (
+	"crypto"
 	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"runtime"
+	"sort"
 	"strings"
 	"testing"
 	"time"
@@ -411,6 +413,307 @@ func TestStatusHashesFilesInTheObjectFormat(t *testing.T) {
 	}
 }
 
+// repoWithMissingUnchangedSubtree makes c1={sub/f, top=1} and c2={top=2}
+// with Git and deletes the tree object of the unchanged sub. Git's commit
+// leaves a valid cache-tree in the index; unless validCacheTree is set, sub/f
+// is staged again, which invalidates the cache-tree for sub and the root.
+func repoWithMissingUnchangedSubtree(t *testing.T, validCacheTree bool) string {
+	t.Helper()
+	requireGitBinary(t)
+
+	dir := t.TempDir()
+	git(t, dir, "init", "-q")
+	require.NoError(t, os.MkdirAll(filepath.Join(dir, "sub"), 0o755))
+	require.NoError(t, os.WriteFile(filepath.Join(dir, "sub", "f"), []byte("f\n"), 0o644))
+	require.NoError(t, os.WriteFile(filepath.Join(dir, "top"), []byte("1\n"), 0o644))
+	git(t, dir, "add", ".")
+	git(t, dir, "commit", "-q", "-m", "c1")
+	require.NoError(t, os.WriteFile(filepath.Join(dir, "top"), []byte("2\n"), 0o644))
+	git(t, dir, "commit", "-q", "-am", "c2")
+
+	if !validCacheTree {
+		blob := strings.TrimSpace(git(t, dir, "rev-parse", "HEAD:sub/f"))
+		git(t, dir, "update-index", "--force-remove", "sub/f")
+		git(t, dir, "update-index", "--add", "--cacheinfo", "100644,"+blob+",sub/f")
+	}
+
+	sub := strings.TrimSpace(git(t, dir, "rev-parse", "HEAD:sub"))
+	require.NoError(t, os.Remove(filepath.Join(dir, ".git", "objects", sub[:2], sub[2:])))
+	return dir
+}
+
+// Git's status and mixed reset skip a subtree that the cache-tree records as
+// unchanged without reading it, so both work when that tree is missing, and
+// both fail when the cache-tree cannot vouch for it.
+func TestStatusAndMixedResetSkipUnchangedSubtreeByCacheTree(t *testing.T) {
+	t.Parallel()
+
+	for _, valid := range []bool{true, false} {
+		name := "invalid cache-tree"
+		if valid {
+			name = "valid cache-tree"
+		}
+
+		t.Run(name+"/status", func(t *testing.T) {
+			t.Parallel()
+
+			dir := repoWithMissingUnchangedSubtree(t, valid)
+			_, gitOK := gitAllowFail(t, dir, "status", "--porcelain")
+			require.Equal(t, valid, gitOK, "git status")
+
+			r, err := PlainOpen(dir)
+			require.NoError(t, err)
+			t.Cleanup(func() { _ = r.Close() })
+			w, err := r.Worktree()
+			require.NoError(t, err)
+
+			st, err := w.Status()
+			if !valid {
+				require.ErrorIs(t, err, plumbing.ErrObjectNotFound)
+				return
+			}
+			require.NoError(t, err)
+			assert.True(t, st.IsClean(), "status: %v", st)
+		})
+
+		t.Run(name+"/mixed reset", func(t *testing.T) {
+			t.Parallel()
+
+			dir := repoWithMissingUnchangedSubtree(t, valid)
+			c1 := plumbing.NewHash(strings.TrimSpace(git(t, dir, "rev-parse", "HEAD~1")))
+			oldTop := plumbing.NewHash(strings.TrimSpace(git(t, dir, "rev-parse", "HEAD~1:top")))
+
+			// Git is probed on a copy, so that go-git starts from the same
+			// index.
+			probe := t.TempDir()
+			require.NoError(t, os.CopyFS(probe, os.DirFS(dir)))
+			_, gitOK := gitAllowFail(t, probe, "reset", "-q", "HEAD~1")
+			require.Equal(t, valid, gitOK, "git reset")
+
+			r, err := PlainOpen(dir)
+			require.NoError(t, err)
+			t.Cleanup(func() { _ = r.Close() })
+			w, err := r.Worktree()
+			require.NoError(t, err)
+
+			err = w.Reset(&ResetOptions{Commit: c1, Mode: MixedReset})
+			if !valid {
+				require.ErrorIs(t, err, plumbing.ErrObjectNotFound)
+				return
+			}
+			require.NoError(t, err)
+
+			head, err := r.Head()
+			require.NoError(t, err)
+			assert.Equal(t, c1, head.Hash())
+
+			idx, err := r.Storer.Index()
+			require.NoError(t, err)
+			e, err := idx.Entry("top")
+			require.NoError(t, err)
+			assert.Equal(t, oldTop, e.Hash)
+			_, err = idx.Entry("sub/f")
+			require.NoError(t, err)
+		})
+	}
+}
+
+// Changing the index invalidates the directories of the cache-tree it was
+// read with, so a later status does not take a changed directory for
+// unchanged.
+func TestStatusAfterAddIgnoresTheCacheTreeItWasReadWith(t *testing.T) {
+	t.Parallel()
+	requireGitBinary(t)
+
+	dir := t.TempDir()
+	git(t, dir, "init", "-q")
+	require.NoError(t, os.MkdirAll(filepath.Join(dir, "sub"), 0o755))
+	require.NoError(t, os.WriteFile(filepath.Join(dir, "sub", "f"), []byte("f\n"), 0o644))
+	git(t, dir, "add", ".")
+	git(t, dir, "commit", "-q", "-m", "c1")
+
+	r, err := PlainOpen(dir)
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = r.Close() })
+	w, err := r.Worktree()
+	require.NoError(t, err)
+
+	idx, err := r.Storer.Index()
+	require.NoError(t, err)
+	require.NotNil(t, idx.Cache, "git commit writes a cache-tree")
+
+	require.NoError(t, os.WriteFile(filepath.Join(dir, "sub", "f"), []byte("changed\n"), 0o644))
+	_, err = w.Add("sub/f")
+	require.NoError(t, err)
+
+	st, err := w.Status()
+	require.NoError(t, err)
+	assert.Equal(t, Modified, st.File("sub/f").Staging, "status: %v", st)
+}
+
+// pointerIndexStorer keeps the index it is given, cache-tree included, as
+// a storer outside go-git may.
+type pointerIndexStorer struct {
+	*filesystem.Storage
+	idx *index.Index
+}
+
+func (s *pointerIndexStorer) SetIndex(idx *index.Index) error {
+	s.idx = idx
+	return nil
+}
+
+func (s *pointerIndexStorer) Index() (*index.Index, error) {
+	if s.idx != nil {
+		return s.idx, nil
+	}
+	return s.Storage.Index()
+}
+
+// A storer that keeps the index it is given, as one outside go-git may,
+// does not hand a stale cache-tree to a later diff after go-git stored a
+// changed index: status sees the staged change, and a hard reset reverts it.
+func TestStoredIndexDoesNotKeepAStaleCacheTree(t *testing.T) {
+	t.Parallel()
+	requireGitBinary(t)
+
+	dir := t.TempDir()
+	git(t, dir, "init", "-q")
+	require.NoError(t, os.MkdirAll(filepath.Join(dir, "sub"), 0o755))
+	require.NoError(t, os.WriteFile(filepath.Join(dir, "sub", "f"), []byte("f\n"), 0o644))
+	git(t, dir, "add", ".")
+	git(t, dir, "commit", "-q", "-m", "c1")
+
+	st := &pointerIndexStorer{Storage: filesystem.NewStorage(osfs.New(filepath.Join(dir, ".git")), cache.NewObjectLRUDefault())}
+	r, err := Open(st, osfs.New(dir))
+	require.NoError(t, err)
+	w, err := r.Worktree()
+	require.NoError(t, err)
+
+	idx, err := st.Index()
+	require.NoError(t, err)
+	require.NotNil(t, idx.Cache, "git commit writes a cache-tree")
+
+	require.NoError(t, os.WriteFile(filepath.Join(dir, "sub", "f"), []byte("changed\n"), 0o644))
+	_, err = w.Add("sub/f")
+	require.NoError(t, err)
+
+	status, err := w.Status()
+	require.NoError(t, err)
+	assert.Equal(t, Modified, status.File("sub/f").Staging, "status: %v", status)
+
+	head, err := r.Head()
+	require.NoError(t, err)
+	require.NoError(t, w.Reset(&ResetOptions{Commit: head.Hash(), Mode: HardReset}))
+	body, err := os.ReadFile(filepath.Join(dir, "sub", "f"))
+	require.NoError(t, err)
+	assert.Equal(t, "f\n", string(body))
+}
+
+// A hard or keep reset reads the whole target tree, as Git does to rebuild
+// the cache-tree, so a missing subtree fails it even where the cache-tree
+// vouches that the subtree is unchanged.
+func TestHardAndKeepResetFailOnMissingSubtreeOfTarget(t *testing.T) {
+	t.Parallel()
+
+	for _, tc := range []struct {
+		name    string
+		gitFlag string
+		gitErr  string // git 2.11 dies on the tree earlier than 2.20
+		mode    ResetMode
+	}{
+		{"hard", "--hard", "Could not read|unable to read tree", HardReset},
+		{"keep", "--keep", "unable to read tree", KeepReset},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+
+			dir := repoWithMissingUnchangedSubtree(t, true)
+			c1 := plumbing.NewHash(strings.TrimSpace(git(t, dir, "rev-parse", "HEAD~1")))
+			c2 := plumbing.NewHash(strings.TrimSpace(git(t, dir, "rev-parse", "HEAD")))
+
+			probe := t.TempDir()
+			require.NoError(t, os.CopyFS(probe, os.DirFS(dir)))
+			// Refreshing first keeps keep reset from failing on a stat-dirty
+			// entry, so that it fails on the missing tree.
+			git(t, probe, "update-index", "-q", "--refresh")
+			out, gitOK := gitAllowFail(t, probe, "reset", "-q", tc.gitFlag, "HEAD~1")
+			require.False(t, gitOK, "git reset %s", tc.gitFlag)
+			require.Regexp(t, tc.gitErr, out)
+
+			r, err := PlainOpen(dir)
+			require.NoError(t, err)
+			t.Cleanup(func() { _ = r.Close() })
+			w, err := r.Worktree()
+			require.NoError(t, err)
+
+			err = w.Reset(&ResetOptions{Commit: c1, Mode: tc.mode})
+			require.ErrorIs(t, err, plumbing.ErrObjectNotFound)
+
+			head, err := r.Head()
+			require.NoError(t, err)
+			assert.Equal(t, c2, head.Hash())
+		})
+	}
+}
+
+// Git's checkout -f and restore compare the target against the index with
+// the cache-tree and never read a subtree that it vouches for, so they
+// succeed where reset --hard fails.
+func TestForcedCheckoutAndRestoreSkipUnchangedSubtreeByCacheTree(t *testing.T) {
+	t.Parallel()
+
+	t.Run("checkout", func(t *testing.T) {
+		t.Parallel()
+
+		dir := repoWithMissingUnchangedSubtree(t, true)
+		c1 := plumbing.NewHash(strings.TrimSpace(git(t, dir, "rev-parse", "HEAD~1")))
+
+		if gitAtLeast(t, 2, 20, 0) {
+			probe := t.TempDir()
+			require.NoError(t, os.CopyFS(probe, os.DirFS(dir)))
+			_, gitOK := gitAllowFail(t, probe, "checkout", "-q", "-f", "HEAD~1")
+			require.True(t, gitOK, "git checkout -f")
+		}
+
+		r, err := PlainOpen(dir)
+		require.NoError(t, err)
+		t.Cleanup(func() { _ = r.Close() })
+		w, err := r.Worktree()
+		require.NoError(t, err)
+
+		require.NoError(t, w.Checkout(&CheckoutOptions{Hash: c1, Force: true}))
+		body, err := os.ReadFile(filepath.Join(dir, "top"))
+		require.NoError(t, err)
+		assert.Equal(t, "1\n", string(body))
+	})
+
+	t.Run("restore", func(t *testing.T) {
+		t.Parallel()
+
+		dir := repoWithMissingUnchangedSubtree(t, true)
+		require.NoError(t, os.WriteFile(filepath.Join(dir, "top"), []byte("edited\n"), 0o644))
+
+		probe := t.TempDir()
+		require.NoError(t, os.CopyFS(probe, os.DirFS(dir)))
+		if gitAtLeast(t, 2, 23, 0) {
+			_, gitOK := gitAllowFail(t, probe, "restore", "-S", "-W", "top")
+			require.True(t, gitOK, "git restore")
+		}
+
+		r, err := PlainOpen(dir)
+		require.NoError(t, err)
+		t.Cleanup(func() { _ = r.Close() })
+		w, err := r.Worktree()
+		require.NoError(t, err)
+
+		require.NoError(t, w.Restore(&RestoreOptions{Staged: true, Worktree: true, Files: []string{"top"}}))
+		body, err := os.ReadFile(filepath.Join(dir, "top"))
+		require.NoError(t, err)
+		assert.Equal(t, "2\n", string(body))
+	})
+}
+
 // beforeSetIndexStorer runs a hook when the index is stored, which a reset
 // does last.
 type beforeSetIndexStorer struct {
@@ -512,4 +815,261 @@ func TestGitReportsFilteredUntrackedNames(t *testing.T) {
 			})
 		}
 	}
+}
+
+// repoWithNestedCacheTree has Git commit a nested layout, which leaves a
+// valid cache-tree in the index.
+func repoWithNestedCacheTree(t *testing.T) string {
+	t.Helper()
+	requireGitBinary(t)
+
+	dir := t.TempDir()
+	git(t, dir, "init", "-q")
+	for _, name := range []string{"top", "a/f", "a/b/g", "a/b/c/h", "d/e"} {
+		require.NoError(t, os.MkdirAll(filepath.Dir(filepath.Join(dir, name)), 0o755))
+		require.NoError(t, os.WriteFile(filepath.Join(dir, name), []byte(name+"\n"), 0o644))
+	}
+	git(t, dir, "add", ".")
+	git(t, dir, "-c", "user.name=t", "-c", "user.email=t@t", "commit", "-q", "-m", "c")
+	return dir
+}
+
+// cacheTreeOnDisk lists the cache-tree of the index file as "dir/:valid" or
+// "dir/:invalid", the root being "".
+func cacheTreeOnDisk(t *testing.T, dir string) []string {
+	t.Helper()
+
+	f, err := os.Open(filepath.Join(dir, ".git", "index"))
+	require.NoError(t, err)
+	defer f.Close()
+	idx := &index.Index{}
+	require.NoError(t, index.NewDecoder(f, crypto.SHA1.New()).Decode(idx))
+	require.NotNil(t, idx.Cache, "the index file has no cache-tree")
+
+	var out []string
+	var walk func(pos int, prefix string) int
+	walk = func(pos int, prefix string) int {
+		e := idx.Cache.Entries[pos]
+		path := prefix
+		if e.Path != "" {
+			path += e.Path + "/"
+		}
+		state := "invalid"
+		if e.Entries >= 0 {
+			state = "valid"
+		}
+		out = append(out, path+":"+state)
+		next := pos + 1
+		for range e.Trees {
+			next = walk(next, path)
+		}
+		return next
+	}
+	walk(0, "")
+	sort.Strings(out)
+	return out
+}
+
+func requireGitAcceptsIndexOf(t *testing.T, dir string) {
+	t.Helper()
+	git(t, dir, "fsck", "--strict")
+	_, ok := gitAllowFail(t, dir, "diff-files", "--quiet")
+	require.True(t, ok)
+	probe := t.TempDir()
+	require.NoError(t, os.CopyFS(probe, os.DirFS(dir)))
+	want := strings.TrimSpace(git(t, probe, "write-tree"))
+	git(t, probe, "read-tree", "--empty")
+	git(t, probe, "read-tree", want)
+	require.Equal(t, want, strings.TrimSpace(git(t, probe, "write-tree")))
+	require.Equal(t, want, strings.TrimSpace(git(t, dir, "write-tree")))
+}
+
+// Git trusts a valid cache-tree entry as the tree of its directory, so an
+// index that go-git changes must come back from go-git with the directory
+// and all those above it invalid, and with nothing else lost.
+func TestAddInvalidatesTheCacheTreeGitReads(t *testing.T) {
+	t.Parallel()
+
+	dir := repoWithNestedCacheTree(t)
+	require.NoError(t, os.WriteFile(filepath.Join(dir, "a", "b", "g"), []byte("changed\n"), 0o644))
+
+	r, err := PlainOpen(dir)
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = r.Close() })
+	w, err := r.Worktree()
+	require.NoError(t, err)
+	_, err = w.Add("a/b/g")
+	require.NoError(t, err)
+
+	assert.Equal(t, []string{":invalid", "a/:invalid", "a/b/:invalid", "a/b/c/:valid", "d/:valid"}, cacheTreeOnDisk(t, dir))
+	requireGitAcceptsIndexOf(t, dir)
+
+	reference := t.TempDir()
+	require.NoError(t, os.CopyFS(reference, os.DirFS(dir)))
+	git(t, reference, "add", "a/b/g")
+	assert.Equal(t, strings.TrimSpace(git(t, reference, "write-tree")), strings.TrimSpace(git(t, dir, "write-tree")))
+}
+
+func TestRemoveAndReplaceInvalidateTheCacheTreeGitReads(t *testing.T) {
+	t.Parallel()
+
+	dir := repoWithNestedCacheTree(t)
+
+	r, err := PlainOpen(dir)
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = r.Close() })
+	w, err := r.Worktree()
+	require.NoError(t, err)
+
+	_, err = w.Remove("a/b/g")
+	require.NoError(t, err)
+	_, err = w.Remove("a/b/c/h")
+	require.NoError(t, err)
+	require.NoError(t, os.RemoveAll(filepath.Join(dir, "a", "b")))
+	require.NoError(t, os.WriteFile(filepath.Join(dir, "a", "b"), []byte("now a file\n"), 0o644))
+	_, err = w.Add("a/b")
+	require.NoError(t, err)
+
+	got := cacheTreeOnDisk(t, dir)
+	assert.Contains(t, got, ":invalid")
+	assert.Contains(t, got, "a/:invalid")
+	assert.Contains(t, got, "d/:valid")
+	assert.NotContains(t, got, "a/b/c/:valid")
+	requireGitAcceptsIndexOf(t, dir)
+
+	status, err := w.Status()
+	require.NoError(t, err)
+	assert.Equal(t, Added, status.File("a/b").Staging, "status: %v", status)
+	assert.Equal(t, Deleted, status.File("a/b/g").Staging, "status: %v", status)
+}
+
+func TestCommitAndHardResetWriteTheCacheTree(t *testing.T) {
+	t.Parallel()
+	requireGitBinary(t)
+
+	dir := t.TempDir()
+	r, err := PlainInit(dir, false)
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = r.Close() })
+	w, err := r.Worktree()
+	require.NoError(t, err)
+
+	for _, name := range []string{"top", "a/f", "a/b/g"} {
+		require.NoError(t, os.MkdirAll(filepath.Dir(filepath.Join(dir, name)), 0o755))
+		require.NoError(t, os.WriteFile(filepath.Join(dir, name), []byte(name+"\n"), 0o644))
+	}
+	_, err = w.Add(".")
+	require.NoError(t, err)
+	c1, err := w.Commit("c1", &CommitOptions{Author: &object.Signature{Name: "t", Email: "t@t", When: time.Unix(1, 0)}})
+	require.NoError(t, err)
+
+	assert.Equal(t, []string{":valid", "a/:valid", "a/b/:valid"}, cacheTreeOnDisk(t, dir))
+	requireGitAcceptsIndexOf(t, dir)
+	assert.Equal(t, strings.TrimSpace(git(t, dir, "rev-parse", c1.String()+"^{tree}")), strings.TrimSpace(git(t, dir, "write-tree")))
+
+	require.NoError(t, os.WriteFile(filepath.Join(dir, "a", "b", "g"), []byte("c2\n"), 0o644))
+	_, err = w.Add("a/b/g")
+	require.NoError(t, err)
+	assert.Equal(t, []string{":invalid", "a/:invalid", "a/b/:invalid"}, cacheTreeOnDisk(t, dir))
+
+	require.NoError(t, w.Reset(&ResetOptions{Commit: c1, Mode: HardReset}))
+	assert.Equal(t, []string{":valid", "a/:valid", "a/b/:valid"}, cacheTreeOnDisk(t, dir))
+	requireGitAcceptsIndexOf(t, dir)
+}
+
+// Git writes the cache-tree and go-git reads it: a go-git Add on top of an
+// index that Git wrote leaves a status that Git agrees with.
+func TestGitAndGoGitAgreeOnStatusAcrossCacheTreeWrites(t *testing.T) {
+	t.Parallel()
+
+	dir := repoWithNestedCacheTree(t)
+	require.NoError(t, os.WriteFile(filepath.Join(dir, "d", "e"), []byte("changed\n"), 0o644))
+
+	r, err := PlainOpen(dir)
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = r.Close() })
+	w, err := r.Worktree()
+	require.NoError(t, err)
+	_, err = w.Add("d/e")
+	require.NoError(t, err)
+
+	assert.Equal(t, "M  d/e", strings.TrimSpace(git(t, dir, "status", "--porcelain")))
+	status, err := w.Status()
+	require.NoError(t, err)
+	assert.Equal(t, Modified, status.File("d/e").Staging)
+
+	git(t, dir, "-c", "user.name=t", "-c", "user.email=t@t", "commit", "-q", "-m", "c2")
+	assert.Empty(t, strings.TrimSpace(git(t, dir, "status", "--porcelain")))
+	status, err = w.Status()
+	require.NoError(t, err)
+	assert.True(t, status.IsClean(), "status: %v", status)
+}
+
+// A mixed or merge reset moves the index to the target, and the cache-tree
+// that Git wrote for the old one must not survive for the directories that
+// differ: Git's write-tree has to return the target's tree.
+func TestMixedAndMergeResetLeaveAnIndexGitWritesTheTargetFrom(t *testing.T) {
+	t.Parallel()
+
+	for _, mode := range []struct {
+		name string
+		mode ResetMode
+	}{
+		{"mixed", MixedReset},
+		{"merge", MergeReset},
+	} {
+		t.Run(mode.name, func(t *testing.T) {
+			t.Parallel()
+
+			dir := repoWithNestedCacheTree(t)
+			c1 := plumbing.NewHash(strings.TrimSpace(git(t, dir, "rev-parse", "HEAD")))
+			require.NoError(t, os.WriteFile(filepath.Join(dir, "a", "b", "g"), []byte("c2\n"), 0o644))
+			git(t, dir, "-c", "user.name=t", "-c", "user.email=t@t", "commit", "-q", "-am", "c2")
+			require.NotEqual(t, strings.TrimSpace(git(t, dir, "rev-parse", "HEAD^{tree}")), strings.TrimSpace(git(t, dir, "rev-parse", c1.String()+"^{tree}")))
+
+			r, err := PlainOpen(dir)
+			require.NoError(t, err)
+			t.Cleanup(func() { _ = r.Close() })
+			w, err := r.Worktree()
+			require.NoError(t, err)
+
+			require.NoError(t, w.Reset(&ResetOptions{Commit: c1, Mode: mode.mode}))
+
+			assert.Equal(t, strings.TrimSpace(git(t, dir, "rev-parse", c1.String()+"^{tree}")), strings.TrimSpace(git(t, dir, "write-tree")))
+			git(t, dir, "fsck", "--strict")
+		})
+	}
+}
+
+// Resets change the index without invalidating the cache-tree Git wrote, so
+// a storer that keeps the pointer must be handed it pruned: after a mixed
+// reset to C1 and a soft reset to C2, the index differs from HEAD in a/f.
+func TestResetsDoNotLeaveAStaleCacheTreeInAKeptIndex(t *testing.T) {
+	t.Parallel()
+	requireGitBinary(t)
+
+	dir := t.TempDir()
+	git(t, dir, "init", "-q")
+	require.NoError(t, os.MkdirAll(filepath.Join(dir, "a"), 0o755))
+	require.NoError(t, os.WriteFile(filepath.Join(dir, "a", "f"), []byte("1\n"), 0o644))
+	git(t, dir, "add", ".")
+	git(t, dir, "-c", "user.name=t", "-c", "user.email=t@t", "commit", "-q", "-m", "c1")
+	require.NoError(t, os.WriteFile(filepath.Join(dir, "a", "f"), []byte("2\n"), 0o644))
+	git(t, dir, "-c", "user.name=t", "-c", "user.email=t@t", "commit", "-q", "-am", "c2")
+	c1 := plumbing.NewHash(strings.TrimSpace(git(t, dir, "rev-parse", "HEAD~1")))
+	c2 := plumbing.NewHash(strings.TrimSpace(git(t, dir, "rev-parse", "HEAD")))
+
+	st := &pointerIndexStorer{Storage: filesystem.NewStorage(osfs.New(filepath.Join(dir, ".git")), cache.NewObjectLRUDefault())}
+	r, err := Open(st, osfs.New(dir))
+	require.NoError(t, err)
+	w, err := r.Worktree()
+	require.NoError(t, err)
+
+	require.NoError(t, w.Reset(&ResetOptions{Commit: c1, Mode: MixedReset}))
+	require.NoError(t, w.Reset(&ResetOptions{Commit: c2, Mode: SoftReset}))
+
+	status, err := w.Status()
+	require.NoError(t, err)
+	assert.Equal(t, Modified, status.File("a/f").Staging, "status: %v", status)
+	assert.Equal(t, Modified, status.File("a/f").Worktree, "status: %v", status)
 }

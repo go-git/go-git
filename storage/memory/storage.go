@@ -150,11 +150,20 @@ type IndexStorage struct {
 }
 
 // SetIndex stores the given index.
-// Note: this method sets idx.ModTime to simulate filesystem storage behavior.
+// Note: this method sets idx.ModTime to simulate filesystem storage behavior,
+// and stores a shallow copy of idx with its own copy of the Cache, pruned of
+// the entries that no longer describe the index.
 func (c *IndexStorage) SetIndex(idx *index.Index) error {
 	// Set ModTime to enable racy git detection in the metadata optimization.
 	idx.ModTime = time.Now()
-	c.index = idx
+	// The stored index is handed out to be changed in place, so its cache-tree
+	// is its own, and pruned as the filesystem storage prunes what it writes.
+	stored := *idx
+	if idx.Cache != nil {
+		stored.Cache = &index.Tree{Entries: slices.Clone(idx.Cache.Entries)}
+		stored.PruneCache()
+	}
+	c.index = &stored
 	return nil
 }
 

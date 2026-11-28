@@ -8,7 +8,9 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/go-git/go-git/v6/plumbing"
+	"github.com/go-git/go-git/v6/plumbing/filemode"
 	formatcfg "github.com/go-git/go-git/v6/plumbing/format/config"
+	"github.com/go-git/go-git/v6/plumbing/format/index"
 	"github.com/go-git/go-git/v6/plumbing/format/reflog"
 	"github.com/go-git/go-git/v6/plumbing/storer"
 	"github.com/go-git/go-git/v6/storage/memory"
@@ -305,4 +307,47 @@ func TestShallowStorageDoesNotAliasCaller(t *testing.T) {
 	again, err := s.Shallow()
 	require.NoError(t, err)
 	assert.Equal(t, []plumbing.Hash{hashA, hashB}, again)
+}
+
+// The stored index is handed out to be changed in place, so its cache-tree
+// is a copy of the caller's, pruned of what no longer describes the entries.
+// The caller's own is left as it was.
+func TestSetIndexStoresItsOwnPrunedCacheTree(t *testing.T) {
+	t.Parallel()
+
+	blob := plumbing.NewHash("880cd14280f4b9b6ed3986d6671f907d7cc2a198")
+	body := append([]byte("100644 f\x00"), blob.Bytes()...)
+	h := plumbing.NewHasher(formatcfg.SHA1, plumbing.TreeObject, int64(len(body)))
+	_, _ = h.Write(body)
+	accurate := h.Sum()
+	stale := plumbing.NewHash("1111111111111111111111111111111111111111")
+
+	for name, tc := range map[string]struct {
+		hash  plumbing.Hash
+		valid bool
+	}{
+		"accurate": {accurate, true},
+		"stale":    {stale, false},
+	} {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+
+			s := memory.NewStorage()
+			given := &index.Index{
+				Version: 2,
+				Entries: []*index.Entry{{Name: "f", Mode: filemode.Regular, Hash: blob}},
+				Cache:   &index.Tree{Entries: []index.TreeEntry{{Entries: 1, Hash: tc.hash}}},
+			}
+			require.NoError(t, s.SetIndex(given))
+
+			idx, err := s.Index()
+			require.NoError(t, err)
+			require.NotNil(t, idx.Cache)
+			assert.Equal(t, tc.valid, idx.Cache.Entries[0].Entries >= 0)
+			assert.Equal(t, 1, given.Cache.Entries[0].Entries, "the caller's cache-tree is left alone")
+
+			idx.InvalidateCache("f")
+			assert.Equal(t, 1, given.Cache.Entries[0].Entries)
+		})
+	}
 }
